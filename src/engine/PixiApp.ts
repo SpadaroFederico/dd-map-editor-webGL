@@ -8,8 +8,8 @@ export class PixiApp {
     this.app = new Application({
       width: window.innerWidth,
       height: window.innerHeight,
-      backgroundColor: 0x000000,
-      antialias: false,
+      backgroundColor: 0x000000, // sfondo nero
+      antialias: true,
       resolution: 1,
       autoDensity: true,
       powerPreference: "high-performance",
@@ -17,15 +17,20 @@ export class PixiApp {
 
     container.appendChild(this.app.renderer.view as unknown as HTMLCanvasElement);
 
-    // Impostazioni extra per coerenza visiva
-    this.app.renderer.background.color = [0, 0, 0];
-    this.app.renderer.background.alpha = 1;
-    this.app.renderer.background.clearBeforeRender = true;
-
-    // Contenitore principale del mondo
     this.world = new Container();
     this.app.stage.addChild(this.world);
 
+    // Zoom iniziale + centratura
+    const initialZoom = 0.8;
+    this.world.scale.set(initialZoom);
+    this.centerWorld();
+
     console.log("PixiJS version:", VERSION);
+  }
+
+  private centerWorld() {
+    const { width, height } = this.app.renderer;
+    this.world.x = width / 2 - (width * this.world.scale.x) / 2;
+    this.world.y = height / 2 - (height * this.world.scale.y) / 2;
   }
 }

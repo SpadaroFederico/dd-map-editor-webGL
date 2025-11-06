@@ -1,0 +1,55 @@
+.sidebar-fantasy {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 220px;
+  height: 100%;
+  background: radial-gradient(circle at 30% 10%, #181010, #0b0b0b);
+  border-right: 2px solid #4b2a14;
+  color: #f5e6c5;
+  font-family: "Cinzel", serif;
+  padding: 15px;
+  box-shadow: 0 0 20px #000;
+  z-index: 9999;
+  user-select: none;
+}
+
+.sidebar-fantasy h2 {
+  text-align: center;
+  color: #d8a24a;
+  font-size: 20px;
+  margin-bottom: 20px;
+}
+
+.sidebar-fantasy h3 {
+  color: #cba96b;
+  font-size: 14px;
+  margin-bottom: 5px;
+}
+
+.btn-group {
+  display: flex;
+  justify-content: space-around;
+  margin-bottom: 10px;
+}
+
+.btn-group button {
+  background: #1b1b22;
+  border: 1px solid #704214;
+  border-radius: 6px;
+  color: #f5e6c5;
+  cursor: pointer;
+  font-size: 18px;
+  padding: 5px 10px;
+  transition: all 0.2s ease;
+}
+
+.btn-group button:hover {
+  background: #3c2a14;
+  transform: scale(1.1);
+}
+
+#brush-size {
+  width: 100%;
+  accent-color: #d8a24a;
+}

@@ -17,17 +17,28 @@ export class TileBackground {
     this.tileSize = tileSize;
 
     // Calcola quante tile servono per coprire l'area visibile
-    this.tilesPerRow = Math.ceil(app.renderer.width / tileSize);
-    this.tilesPerCol = Math.ceil(app.renderer.height / tileSize);
+    this.tilesPerRow = Math.ceil(app.renderer.width / tileSize) - 1;
+    this.tilesPerCol = Math.ceil(app.renderer.height / tileSize) - 1;
 
-    // Percorsi texture
-    const texturePaths = Array.from({ length: 15 }, (_, i) =>
-      `src/assets/tiles/${type}/${type}_${i + 1}.png`
-    );
+
+    // ✅ Percorsi texture corretti in base al tipo
+    let texturePaths: string[] = [];
+
+    if (type === "dirt") {
+      texturePaths = Array.from({ length: 15 }, (_, i) =>
+        `src/assets/tiles/dirt/dirt_stylized_rock_${i + 1}.png`
+      );
+    } else {
+      texturePaths = Array.from({ length: 15 }, (_, i) =>
+        `src/assets/tiles/${type}/${type}_${i + 1}.png`
+      );
+    }
 
     PIXI.Assets.load(texturePaths).then(() => {
       // Usa la cache per ottenere texture coerenti
-      this.textures = texturePaths.map((p) => PIXI.Assets.get(p) as PIXI.Texture);
+      this.textures = texturePaths.map(
+        (p) => PIXI.Assets.get(p) as PIXI.Texture
+      );
       this.generateTiles();
     });
   }
