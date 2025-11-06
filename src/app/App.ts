@@ -14,6 +14,7 @@ export function startEditor(): void {
   let drawing = false;
   let activeBrushType: "grass" | "dirt" | "water" = "dirt";
   let brushSize = 32;
+  let brushShape: "circle" | "square" | "polygon" = "circle";
   let currentStroke: BrushStroke | null = null;
 
   // terreno base (solo visivo sotto tutto)
@@ -37,8 +38,10 @@ export function startEditor(): void {
   canvas.addEventListener("pointerdown", () => {
     if (controls.isPanActive) return;
 
-    // crea una nuova pennellata per ogni click (ordine temporale garantito)
+    // crea una nuova pennellata per ogni click
     currentStroke = new BrushStroke(editor.app, activeBrushType, brushSize);
+    currentStroke.setShape(brushShape);
+
     editor.world.addChild(currentStroke.container);
     currentStroke.start();
     drawing = true;
@@ -104,6 +107,12 @@ export function startEditor(): void {
     },
     (size) => {
       brushSize = size;
+    },
+    (shape) => {
+      brushShape = shape;
+    },
+    () => {
+      // roughness callback rimossa, non serve più
     }
   );
 }
