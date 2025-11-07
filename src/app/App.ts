@@ -15,76 +15,59 @@ export function startEditor(): void {
   let activeBrushType: "grass" | "dirt" | "water" = "dirt";
   let brushSize = 32;
   let brushShape: "circle" | "square" | "polygon" = "circle";
+  let currentRoughness = 10;
+  let currentEdge = 20;
+  let currentNoise = 10;
   let currentStroke: BrushStroke | null = null;
 
-  // terreno base (solo visivo sotto tutto)
+  // terreno base (livello inferiore)
   let currentBg: TileBackground | null = null;
   const generateBase = (type: "grass" | "dirt" | "water") => {
-    const prevPos = currentBg
-      ? { x: currentBg.container.x, y: currentBg.container.y }
-      : { x: 0, y: 0 };
-
     if (currentBg) editor.world.removeChild(currentBg.container);
-
     currentBg = new TileBackground(editor.app, type, 64);
     editor.world.addChildAt(currentBg.container, 0);
-    currentBg.container.x = prevPos.x;
-    currentBg.container.y = prevPos.y;
   };
-
   generateBase("grass");
 
-  // --- GESTIONE DISEGNO ---
-  canvas.addEventListener("pointerdown", () => {
+  // --- DISEGNO ---
+  canvas.addEventListener("pointerdown", (e) => {
     if (controls.isPanActive) return;
-
-    // crea una nuova pennellata per ogni click
-    currentStroke = new BrushStroke(editor.app, activeBrushType, brushSize);
-    currentStroke.setShape(brushShape);
-
-    editor.world.addChild(currentStroke.container);
-    currentStroke.start();
-    drawing = true;
-  });
-
-  canvas.addEventListener("pointermove", (e: PointerEvent) => {
-    if (!drawing || !currentStroke) return;
 
     const rect = canvas.getBoundingClientRect();
     const worldX = (e.clientX - rect.left - editor.world.x) / editor.world.scale.x;
     const worldY = (e.clientY - rect.top - editor.world.y) / editor.world.scale.y;
 
-    // disegno fluido
-    if (!(currentStroke as any).lastX) {
-      (currentStroke as any).lastX = worldX;
-      (currentStroke as any).lastY = worldY;
-    }
+    currentStroke = new BrushStroke(editor.app, activeBrushType, brushSize);
+    currentStroke.setShape(
+  brushShape === "polygon" ? "blob" : "circle"
+);
+    currentStroke.setRoughness(currentRoughness);
+    currentStroke.setNoise(currentNoise);
 
-    const lastX = (currentStroke as any).lastX;
-    const lastY = (currentStroke as any).lastY;
-    const dx = worldX - lastX;
-    const dy = worldY - lastY;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    const step = currentStroke.brushSize / 2;
+    editor.world.addChild(currentStroke.container);
+    currentStroke.start();
 
-    for (let i = 0; i <= dist; i += step) {
-      const x = lastX + (dx * i) / dist;
-      const y = lastY + (dy * i) / dist;
-      currentStroke.drawAt(editor.app, x, y);
-    }
+    // disegna subito una macchia
+    currentStroke.drawAt(worldX, worldY);
+    drawing = true;
+  });
 
-    (currentStroke as any).lastX = worldX;
-    (currentStroke as any).lastY = worldY;
+  canvas.addEventListener("pointermove", (e: PointerEvent) => {
+    if (!drawing || !currentStroke || controls.isPanActive) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const worldX = (e.clientX - rect.left - editor.world.x) / editor.world.scale.x;
+    const worldY = (e.clientY - rect.top - editor.world.y) / editor.world.scale.y;
+
+    // disegna una macchia casuale lungo il movimento
+    currentStroke.drawAt(worldX, worldY);
   });
 
   window.addEventListener("pointerup", () => {
-    drawing = false;
-    if (currentStroke) currentStroke.stop();
-    if (currentStroke) {
-      delete (currentStroke as any).lastX;
-      delete (currentStroke as any).lastY;
-    }
+    if (!currentStroke) return;
+    currentStroke.stop();
     currentStroke = null;
+    drawing = false;
   });
 
   // --- ZOOM ---
@@ -99,20 +82,12 @@ export function startEditor(): void {
 
   // --- SIDEBAR ---
   new Sidebar(
-    (baseType) => {
-      generateBase(baseType);
-    },
-    (brushType) => {
-      activeBrushType = brushType;
-    },
-    (size) => {
-      brushSize = size;
-    },
-    (shape) => {
-      brushShape = shape;
-    },
-    () => {
-      // roughness callback rimossa, non serve più
-    }
+    (baseType: "grass" | "dirt" | "water") => generateBase(baseType),
+    (brushType: "grass" | "dirt" | "water") => (activeBrushType = brushType),
+    (size: number) => (brushSize = size),
+    (shape: "circle" | "square" | "polygon") => (brushShape = shape),
+    (rough: number) => (currentRoughness = rough),
+    (_edge: number) => (currentEdge = _edge), // edge per ora non usato nel blob
+    (noise: number) => (currentNoise = noise)
   );
 }

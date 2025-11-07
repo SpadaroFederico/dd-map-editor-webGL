@@ -1,29 +1,38 @@
 import * as PIXI from "pixi.js";
 import { TileBackground } from "./TileBackground";
 
-export type BrushShape = "circle" | "square" | "polygon";
-
 export class BrushStroke {
   public container: PIXI.Container;
-  private graphics: PIXI.Graphics;
-  private terrain: TileBackground;
   public active = false;
   public brushSize = 32;
-  public brushShape: BrushShape = "circle";
+  public roughness = 0.4;
+  public noise = 0.5;
+  public brushShape: "circle" | "blob" | "angular" = "circle";
+
+  private app: PIXI.Application;
+  private terrain: TileBackground;
+  private maskTexture: PIXI.RenderTexture;
+  private maskSprite: PIXI.Sprite;
+  private graphics: PIXI.Graphics;
 
   constructor(app: PIXI.Application, terrainType: string, size = 32) {
+    this.app = app;
     this.container = new PIXI.Container();
     this.graphics = new PIXI.Graphics();
 
-    // background del terreno
+    // terreno
     this.terrain = new TileBackground(app, terrainType as any, 64);
 
-    // maschera locale (Graphics diretta)
-    this.terrain.container.mask = this.graphics;
+    // texture maschera cumulativa
+    this.maskTexture = PIXI.RenderTexture.create({
+      width: app.renderer.width,
+      height: app.renderer.height,
+    });
+    this.maskSprite = new PIXI.Sprite(this.maskTexture);
 
-    // ordine di disegno: terreno + maschera
+    this.terrain.container.mask = this.maskSprite;
     this.container.addChild(this.terrain.container);
-    this.container.addChild(this.graphics);
+    this.container.addChild(this.maskSprite);
 
     this.brushSize = size;
   }
@@ -36,52 +45,83 @@ export class BrushStroke {
     this.active = false;
   }
 
-  setShape(shape: BrushShape) {
+  setShape(shape: "circle" | "blob" | "angular") {
     this.brushShape = shape;
   }
 
-  drawAt(app: PIXI.Application, x: number, y: number) {
-    if (!this.active) return;
-    const radius = this.brushSize / 2;
+  setRoughness(value: number) {
+    this.roughness = Math.max(0, Math.min(1, value / 100));
+  }
 
+  setNoise(value: number) {
+    this.noise = Math.max(0, Math.min(1, value / 100));
+  }
+
+  drawAt(x: number, y: number) {
+    if (!this.active) return;
+
+    this.graphics.clear();
     this.graphics.beginFill(0xffffff, 1);
 
     switch (this.brushShape) {
       case "circle":
-        this.graphics.drawCircle(x, y, radius);
+        this.graphics.drawCircle(x, y, this.brushSize / 2);
         break;
-
-      case "square":
-        this.graphics.drawRect(x - radius, y - radius, this.brushSize, this.brushSize);
+      case "blob":
+        this.drawBlob(x, y, this.brushSize);
         break;
-
-      case "polygon":
-        this.drawRandomPolygon(x, y, radius);
+      case "angular":
+        this.drawAngular(x, y, this.brushSize);
         break;
     }
 
     this.graphics.endFill();
+
+    // disegna subito nella texture
+    this.app.renderer.render(this.graphics, {
+      renderTexture: this.maskTexture,
+      clear: false,
+    });
   }
 
-/** Poligono casuale realistico */
-private drawRandomPolygon(x: number, y: number, radius: number) {
-  const minRadius = radius * 0.6;
-  const maxRadius = radius * 1.2;
-  const numPoints = 6 + Math.floor(Math.random() * 5); // 6–10 lati
+  /** 🔹 Forma tipo blob morbido */
+  private drawBlob(x: number, y: number, size: number) {
+    const points: number[] = [];
+    const numPoints = 10 + Math.floor(Math.random() * 6);
+    const angleStep = (Math.PI * 2) / numPoints;
+    const radius = size / 2;
+    const rough = radius * this.roughness;
+    const noise = this.noise * radius;
 
-  const points: number[] = [];
-  const startAngle = Math.random() * Math.PI * 2;
+    for (let i = 0; i < numPoints; i++) {
+      const angle = i * angleStep;
+      const offset = Math.sin(i * 1.7) * rough + (Math.random() - 0.5) * noise;
+      const r = radius + offset;
+      const px = x + Math.cos(angle) * r;
+      const py = y + Math.sin(angle) * r;
+      points.push(px, py);
+    }
 
-  for (let i = 0; i < numPoints; i++) {
-    const angle = startAngle + (i / numPoints) * Math.PI * 2;
-    const r = minRadius + Math.random() * (maxRadius - minRadius);
-    const px = x + Math.cos(angle) * r;
-    const py = y + Math.sin(angle) * r;
-    points.push(px, py);
+    this.graphics.drawPolygon(points);
   }
 
-  this.graphics.drawPolygon(points);
-}
+  /** 🔸 Forma spigolosa con numero e orientamento casuale */
+  private drawAngular(x: number, y: number, size: number) {
+    const points: number[] = [];
 
+    const numSides = 4 + Math.floor(Math.random() * 5); // 4–8 lati
+    const baseRadius = size / 2;
+    const rotation = Math.random() * Math.PI * 2;
+    const irregularity = this.roughness * 0.6 * baseRadius; // spigolosità controllata
 
+    for (let i = 0; i < numSides; i++) {
+      const angle = rotation + (i / numSides) * Math.PI * 2;
+      const r = baseRadius + (Math.random() - 0.5) * irregularity;
+      const px = x + Math.cos(angle) * r;
+      const py = y + Math.sin(angle) * r;
+      points.push(px, py);
+    }
+
+    this.graphics.drawPolygon(points);
+  }
 }
