@@ -136,21 +136,34 @@ export function startEditor(): void {
     brush.setScale(brushScale);
   });
 
-  // --- BRUSH ENGINE (rotazione, capsule leggere, anteprima veloce) ---
+  // --- BRUSH ENGINE: spaziatura “diradata” + jitter ---
   const brush = new BrushEngine({
     area,
-    spacing: 10,
     scale: brushScale,
     rotRange: [0, Math.PI * 2] as [number, number],
     accumulatePerStroke: true,
     useCapsule: true,
 
-    // onChange leggero: solo bordo (area + preview), nessuna mesh.update
+    // spaziatura proporzionale alla size del brush (dirada i timbri!)
+    spacing: Math.max(12, 0.9 * brushSize),
+    spacingJitter: 0.18,        // ±18% di variazione
+    minStampIntervalMs: 0,      // puoi provare 10–16ms se vuoi limitare FPS altissimi
+
     onChange: () => {
       scheduleDrawDebug(brush.getPreview());
     },
   });
   brush.setMode("paint");
+
+  new BrushSelector((size) => {
+  brushSize = size;
+  brushScale = brushSize / 64;
+  brush.setScale(brushScale);
+
+  // tieni spacing legato alla size
+  brush.setSpacing(Math.max(12, 0.7 * brushSize));
+  brush.setSpacingJitter(0.18);
+});
 
   // world coords
   function worldFromEvent(e: PointerEvent): Vec2 {
