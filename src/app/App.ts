@@ -1,76 +1,47 @@
+// src/app/App.ts
+import * as PIXI from "pixi.js";
 import { PixiApp } from "../engine/PixiApp";
 import { EditorControls } from "../engine/EditorControls";
-import { Sidebar } from "../ui/Sidebar";
-import { BrushStroke } from "../engine/BrushStroke";
 import { TileBackground } from "../engine/TileBackground";
+import { LayerSelector } from "../ui/LayerSelector";
+import { BrushSelector } from "../ui/BrushSelector"; // solo UI per la size, non dipinge
 
 export function startEditor(): void {
   const container = document.body;
   const editor = new PixiApp(container);
-
   const canvas = editor.app.renderer.view as HTMLCanvasElement;
-  const controls = new EditorControls(canvas, editor.world);
 
-  let drawing = false;
-  let activeBrushType: "grass" | "dirt" | "water" = "dirt";
-  let brushSize = 32;
-  let brushShape: "circle" | "square" | "polygon" = "circle";
-  let currentRoughness = 10;
-  let currentEdge = 20;
-  let currentNoise = 10;
-  let currentStroke: BrushStroke | null = null;
+  // Panning con CTRL + drag
+  new EditorControls(canvas, editor.world);
 
-  // terreno base (livello inferiore)
+  // --- SOLO LAYER DI SFONDO ---
   let currentBg: TileBackground | null = null;
-  const generateBase = (type: "grass" | "dirt" | "water") => {
-    if (currentBg) editor.world.removeChild(currentBg.container);
+
+  const mountBackground = (type: "grass" | "dirt" | "water") => {
+    if (currentBg) {
+      editor.world.removeChild(currentBg.container);
+      currentBg = null;
+    }
     currentBg = new TileBackground(editor.app, type, 64);
-    editor.world.addChildAt(currentBg.container, 0);
+    editor.world.addChildAt(currentBg.container, 0); // sempre alla base
   };
-  generateBase("grass");
 
-  // --- DISEGNO ---
-  canvas.addEventListener("pointerdown", (e) => {
-    if (controls.isPanActive) return;
+  // sfondo iniziale
+  mountBackground("grass");
 
-    const rect = canvas.getBoundingClientRect();
-    const worldX = (e.clientX - rect.left - editor.world.x) / editor.world.scale.x;
-    const worldY = (e.clientY - rect.top - editor.world.y) / editor.world.scale.y;
-
-    currentStroke = new BrushStroke(editor.app, activeBrushType, brushSize);
-    currentStroke.setShape(
-  brushShape === "polygon" ? "blob" : "circle"
-);
-    currentStroke.setRoughness(currentRoughness);
-    currentStroke.setNoise(currentNoise);
-
-    editor.world.addChild(currentStroke.container);
-    currentStroke.start();
-
-    // disegna subito una macchia
-    currentStroke.drawAt(worldX, worldY);
-    drawing = true;
+  // --- UI minimale ---
+  // cambia il tipo di sfondo
+  new LayerSelector((type) => {
+    mountBackground(type);
   });
 
-  canvas.addEventListener("pointermove", (e: PointerEvent) => {
-    if (!drawing || !currentStroke || controls.isPanActive) return;
-
-    const rect = canvas.getBoundingClientRect();
-    const worldX = (e.clientX - rect.left - editor.world.x) / editor.world.scale.x;
-    const worldY = (e.clientY - rect.top - editor.world.y) / editor.world.scale.y;
-
-    // disegna una macchia casuale lungo il movimento
-    currentStroke.drawAt(worldX, worldY);
+  // UI della misura pennello (per ora solo stato, non dipinge)
+  let brushSize = 64;
+  new BrushSelector((size) => {
+    brushSize = size; // prepariamo lo stato per il prossimo step
   });
 
-  window.addEventListener("pointerup", () => {
-    if (!currentStroke) return;
-    currentStroke.stop();
-    currentStroke = null;
-    drawing = false;
-  });
-
-  // --- ZOOM ---
+  // --- Zoom ---
   canvas.addEventListener("wheel", (e: WheelEvent) => {
     e.preventDefault();
     const zoomFactor = 1.05;
@@ -80,14 +51,5 @@ export function startEditor(): void {
     editor.world.scale.set(clampedScale);
   });
 
-  // --- SIDEBAR ---
-  new Sidebar(
-    (baseType: "grass" | "dirt" | "water") => generateBase(baseType),
-    (brushType: "grass" | "dirt" | "water") => (activeBrushType = brushType),
-    (size: number) => (brushSize = size),
-    (shape: "circle" | "square" | "polygon") => (brushShape = shape),
-    (rough: number) => (currentRoughness = rough),
-    (_edge: number) => (currentEdge = _edge), // edge per ora non usato nel blob
-    (noise: number) => (currentNoise = noise)
-  );
+  // Nessuna pennellata, nessuna mask, nessuna sidebar.
 }

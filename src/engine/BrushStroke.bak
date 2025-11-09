@@ -1,0 +1,83 @@
+import * as PIXI from "pixi.js";
+
+export class BrushStroke {
+  public container: PIXI.Container;
+  private gfx: PIXI.Graphics;
+  private color: number;
+  private size: number;
+  private lastPoint: PIXI.Point | null = null;
+  private roughness32: number[];
+
+  constructor(color: number, size: number) {
+    this.color = color;
+    this.size = size;
+    this.container = new PIXI.Container();
+    this.gfx = new PIXI.Graphics();
+    this.container.addChild(this.gfx);
+
+    this.roughness32 = [
+      -0.5875, -0.815625, -0.475, -0.821875, -0.16875, -0.596875,
+      0, -0.703125, 0.28125, -0.603125, 0.30625, -0.009375,
+      0.0625, 0.078125, -0.15625, 0.378125, -0.3, 0.396875,
+      -0.6125, 0.090625, -0.4625, -0.078125, -0.8375, -0.484375
+    ];
+  }
+
+  startAt(x: number, y: number) {
+    this.lastPoint = new PIXI.Point(x, y);
+    this.gfx.beginFill(this.color, 1);
+    this.gfx.blendMode = PIXI.BLEND_MODES.SCREEN;
+    this.addShape(x, y, 0);
+  }
+
+  extendTo(x: number, y: number) {
+    if (!this.lastPoint) return;
+
+    const dx = x - this.lastPoint.x;
+    const dy = y - this.lastPoint.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist < this.size * 0.15) return;
+
+    const angle = Math.atan2(dy, dx);
+    const steps = Math.ceil(dist / (this.size * 0.4));
+
+    for (let i = 1; i <= steps; i++) {
+      const t = i / steps;
+      const cx = this.lastPoint.x + dx * t;
+      const cy = this.lastPoint.y + dy * t;
+      this.addShape(cx, cy, angle);
+    }
+
+    this.lastPoint.set(x, y);
+  }
+
+  private addShape(x: number, y: number, angle: number) {
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    const half = this.size / 2;
+    const flat: number[] = [];
+
+    for (let i = 0; i < this.roughness32.length; i += 2) {
+      const nx = this.roughness32[i] + (Math.random() - 0.5) * 0.05;
+      const ny = this.roughness32[i + 1] + (Math.random() - 0.5) * 0.05;
+
+      const sx = nx * half;
+      const sy = ny * half;
+
+      const rx = sx * cos - sy * sin;
+      const ry = sx * sin + sy * cos;
+
+      flat.push(x + rx, y + ry);
+    }
+
+    this.gfx.drawPolygon(flat);
+  }
+
+  finish() {
+    this.gfx.endFill();
+  }
+
+  destroy() {
+    this.container.destroy({ children: true });
+  }
+}

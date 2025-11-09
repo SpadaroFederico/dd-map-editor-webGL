@@ -1,0 +1,119 @@
+export class Sidebar {
+  element: HTMLDivElement;
+  private onBaseChange: (type: "grass" | "dirt" | "water") => void;
+  private onBrushChange: (type: "grass" | "dirt" | "water") => void;
+  private onSizeChange: (size: number) => void;
+
+  constructor(
+    onBaseChange: (type: "grass" | "dirt" | "water") => void,
+    onBrushChange: (type: "grass" | "dirt" | "water") => void,
+    onSizeChange: (size: number) => void
+  ) {
+    this.onBaseChange = onBaseChange;
+    this.onBrushChange = onBrushChange;
+    this.onSizeChange = onSizeChange;
+
+    this.element = document.createElement("div");
+    this.element.className = "sidebar-fantasy";
+    Object.assign(this.element.style, {
+      position: "fixed",
+      top: "0",
+      left: "0",
+      width: "320px",
+      height: "100vh",
+      background: "rgba(25,25,25,0.96)",
+      color: "#fff",
+      padding: "16px",
+      overflowY: "auto",
+      fontFamily: "monospace",
+      zIndex: "1000",
+      borderRight: "2px solid #333",
+    });
+
+    this.render();
+    document.body.appendChild(this.element);
+  }
+
+  private render() {
+    this.element.innerHTML = `
+      <h2 style="margin-top:0;">🧭 Editor Brush</h2>
+
+      <section>
+        <h3>Terreno di base</h3>
+        <div style="display:flex;gap:8px;">
+          <button data-type="grass">🌿 Erba</button>
+          <button data-type="dirt">🪨 Terra</button>
+          <button data-type="water">💧 Acqua</button>
+        </div>
+      </section>
+
+      <section style="margin-top:16px;">
+        <h3>Brush attivo</h3>
+        <div style="display:flex;gap:8px;">
+          <button data-brush="grass">🌿</button>
+          <button data-brush="dirt">🪨</button>
+          <button data-brush="water">💧</button>
+        </div>
+      </section>
+
+      <section style="margin-top:20px;">
+        <h3>🎚 Dimensione brush</h3>
+        <input id="brush-size" type="range" min="10" max="200" value="100" style="width:100%;">
+        <div style="font-size:12px;color:#ccc;margin-top:4px;">
+          <span id="brush-size-value">100</span> px
+        </div>
+      </section>
+
+      <section style="margin-top:20px;">
+        <h3>✏️ Disegna nuova forma</h3>
+        <button id="start-draw" style="width:100%;margin-bottom:8px;">✏️ Inizia disegno</button>
+        <p style="font-size:12px;color:#ccc;">
+          Clicca per creare o trascina per pennellare.
+        </p>
+        <pre id="coords-output" style="background:#111;padding:8px;border-radius:6px;min-height:80px;color:#0f0;white-space:pre-wrap;"></pre>
+      </section>
+    `;
+
+    this.bindEvents();
+  }
+
+  private bindEvents() {
+    // terreno
+    this.element.querySelectorAll("[data-type]").forEach((btn) =>
+      btn.addEventListener("click", () => {
+        const type = (btn as HTMLButtonElement).dataset.type as "grass" | "dirt" | "water";
+        this.onBaseChange(type);
+      })
+    );
+
+    // brush
+    this.element.querySelectorAll("[data-brush]").forEach((btn) =>
+      btn.addEventListener("click", () => {
+        const type = (btn as HTMLButtonElement).dataset.brush as "grass" | "dirt" | "water";
+        this.onBrushChange(type);
+      })
+    );
+
+    // dimensione brush
+    const sizeInput = this.element.querySelector("#brush-size") as HTMLInputElement;
+    const sizeLabel = this.element.querySelector("#brush-size-value") as HTMLElement;
+    sizeInput.addEventListener("input", () => {
+      const value = parseInt(sizeInput.value);
+      sizeLabel.textContent = value.toString();
+      this.onSizeChange(value);
+    });
+
+    // evento di disegno
+    const startDraw = this.element.querySelector("#start-draw") as HTMLButtonElement;
+    startDraw.addEventListener("click", () => {
+      document.dispatchEvent(new CustomEvent("toggleDrawMode", { detail: true }));
+    });
+
+    // riceve le coordinate
+    document.addEventListener("polygonSaved", (e: any) => {
+      const coords = e.detail as number[];
+      const output = this.element.querySelector("#coords-output") as HTMLElement;
+      output.textContent = JSON.stringify(coords, null, 2);
+    });
+  }
+}
