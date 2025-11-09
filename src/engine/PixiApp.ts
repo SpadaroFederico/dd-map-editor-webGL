@@ -18,6 +18,7 @@ export class PixiApp {
     container.appendChild(this.app.renderer.view as unknown as HTMLCanvasElement);
 
     this.world = new Container();
+    this.world.sortableChildren = true;
     this.app.stage.addChild(this.world);
 
     // Zoom iniziale + centratura

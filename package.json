@@ -13,9 +13,11 @@
     "vite": "^7.2.0"
   },
   "dependencies": {
+    "earcut": "^3.0.2",
     "file-saver": "^2.0.5",
     "open-simplex-noise": "^2.5.0",
     "pixi.js": "^7.4.2",
+    "polygon-clipping": "^0.15.7",
     "zod": "^4.1.12",
     "zustand": "^5.0.8"
   }
