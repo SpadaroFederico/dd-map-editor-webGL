@@ -6,7 +6,11 @@ export type BrushMode = "paint" | "erase";
 
 type Opts = {
   area: TerrainArea;
-  spacing?: number;                 // base spacing in px
+  // Spaziatura: scegli una delle due (se entrambe, vince spacingPx)
+  spacing?: number;                // in coordinate mondo (legacy)
+  spacingPx?: number;              // in pixel schermo (consigliato)
+  getWorldScale?: () => number;    // per convertire px -> world
+
   scale?: number;
   rotRange?: [number, number];
   onChange?: () => void;
@@ -15,9 +19,21 @@ type Opts = {
   useCapsule?: boolean;
   capsuleRadiusPx?: number;
 
-  // NUOVO: controllo della cadenza dei timbri
-  spacingJitter?: number;           // 0..0.5 -> ±% di variazione
-  minStampIntervalMs?: number;      // throttle temporale facoltativo
+  spacingJitter?: number;          // 0..0.5 -> ±% di variazione
+  minStampIntervalMs?: number;     // throttle temporale facoltativo
+
+  // Debug: chiamata ad ogni timbro
+  onDebug?: (info: {
+    p: Vec2;
+    prev: Vec2 | null;
+    spacingWorld: number;
+    nextSpacingWorld: number;
+    distAccWorld: number;
+    worldScale: number;
+    capsuleRadius: number;
+    rotation: number;
+    isPreview: boolean;
+  }) => void;
 };
 
 export class BrushEngine {
@@ -25,10 +41,11 @@ export class BrushEngine {
   private baseScale: number;
   private rotRange: [number, number];
   private onChange?: () => void;
+  private onDebug?: Opts["onDebug"];
 
   private isDown = false;
-  private lastPos: Vec2 | null = null;      // ultima POSIZIONE TIMBRO
-  private lastP: Vec2 | null = null;        // ultimo PUNTATORE visto
+  private lastPos: Vec2 | null = null;   // ultima POSIZIONE TIMBRO
+  private lastP: Vec2 | null = null;     // ultimo PUNTATORE visto
   private mode: BrushMode = "paint";
   private pending = false;
 
@@ -38,13 +55,20 @@ export class BrushEngine {
   private useCapsule: boolean;
   private capsuleRadiusPx?: number;
 
-  // === NUOVO: spaziatura “a distanza accumulata” ===
-  private spacingBase: number;
+  // Spaziatura “a distanza accumulata”
+  private spacingBaseWorld: number;      // soglia in world
   private spacingJitter: number;
   private minStampIntervalMs: number;
+  private getWorldScale?: () => number;
 
-  private distAcc = 0;              // distanza accumulata dall'ultimo timbro
-  private nextSpacing = 0;          // soglia corrente (con jitter)
+  private fromPx(px: number): number {
+    const s = this.getWorldScale ? this.getWorldScale() : 1;
+    // spacing in world = pixel / scala
+    return px / Math.max(1e-6, s);
+  }
+
+  private distAcc = 0;                   // distanza accumulata (world)
+  private nextSpacingWorld = 0;          // soglia corrente (world)
   private lastStampTime = 0;
 
   constructor(opts: Opts) {
@@ -52,31 +76,46 @@ export class BrushEngine {
     this.baseScale = opts.scale ?? 1;
     this.rotRange = opts.rotRange ?? [0, Math.PI * 2];
     this.onChange = opts.onChange;
+    this.onDebug = opts.onDebug;
 
     this.accumulatePerStroke = opts.accumulatePerStroke ?? true;
     this.useCapsule = opts.useCapsule ?? true;
     this.capsuleRadiusPx = opts.capsuleRadiusPx;
 
-    this.spacingBase = Math.max(1, opts.spacing ?? 10);
+    this.getWorldScale = opts.getWorldScale;
+
+    // inizializza spacing base in WORLD:
+    if (opts.spacingPx != null) {
+      this.spacingBaseWorld = this.fromPx(opts.spacingPx);
+    } else {
+      this.spacingBaseWorld = Math.max(1, opts.spacing ?? 10);
+    }
     this.spacingJitter = Math.max(0, Math.min(0.5, opts.spacingJitter ?? 0.15));
     this.minStampIntervalMs = Math.max(0, opts.minStampIntervalMs ?? 0);
 
-    this.nextSpacing = this.spacingBase * (1 + (Math.random() * 2 - 1) * this.spacingJitter);
+    this.nextSpacingWorld = this.spacingBaseWorld * (1 + (Math.random() * 2 - 1) * this.spacingJitter);
   }
 
   // === API ===
   setMode(mode: BrushMode) { this.mode = mode; }
   setScale(s: number) { this.baseScale = s; }
-  setSpacing(px: number) {
-    this.spacingBase = Math.max(1, px);
-    this.nextSpacing = this.spacingBase * (1 + (Math.random() * 2 - 1) * this.spacingJitter);
-  }
-  setSpacingJitter(p: number) {
-    this.spacingJitter = Math.max(0, Math.min(0.5, p));
-    this.nextSpacing = this.spacingBase * (1 + (Math.random() * 2 - 1) * this.spacingJitter);
+
+  setSpacing(pxWorld: number) {
+    this.spacingBaseWorld = Math.max(1, pxWorld);
+    this.nextSpacingWorld = this.spacingBaseWorld * (1 + (Math.random() * 2 - 1) * this.spacingJitter);
   }
 
-  /** MultiPolygon della pennellata in corso (per la preview) */
+  setSpacingPx(pxScreen: number) {
+    this.spacingBaseWorld = this.fromPx(pxScreen);
+    this.nextSpacingWorld = this.spacingBaseWorld * (1 + (Math.random() * 2 - 1) * this.spacingJitter);
+  }
+
+  setSpacingJitter(p: number) {
+    this.spacingJitter = Math.max(0, Math.min(0.5, p));
+    this.nextSpacingWorld = this.spacingBaseWorld * (1 + (Math.random() * 2 - 1) * this.spacingJitter);
+  }
+
+  /** MultiPolygon della pennellata in corso (preview) */
   getPreview(): MultiPolygon | null {
     return this.strokeArea ? this.strokeArea.geometry : null;
   }
@@ -88,7 +127,7 @@ export class BrushEngine {
     this.lastP = p;
     this.distAcc = 0;
     this.lastStampTime = performance.now();
-    this.nextSpacing = this.spacingBase * (1 + (Math.random() * 2 - 1) * this.spacingJitter);
+    this.nextSpacingWorld = this.spacingBaseWorld * (1 + (Math.random() * 2 - 1) * this.spacingJitter);
 
     if (this.accumulatePerStroke) this.strokeArea = new TerrainArea();
 
@@ -99,7 +138,7 @@ export class BrushEngine {
   pointerMove(p: Vec2) {
     if (!this.isDown || !this.lastP) return;
 
-    // accumula distanza
+    // accumula distanza (world)
     const dx = p[0] - this.lastP[0];
     const dy = p[1] - this.lastP[1];
     const d = Math.hypot(dx, dy);
@@ -114,32 +153,49 @@ export class BrushEngine {
       return;
     }
 
-    // timbra solo quando superi la soglia corrente
-    if (this.distAcc >= this.nextSpacing) {
+    // timbra solo quando superi la soglia
+    if (this.distAcc >= this.nextSpacingWorld) {
       const prev = this.lastPos;
       this.lastPos = p;
       this.lastStampTime = now;
-      this.applyAt(p, this.randomAngle(), prev);
+      const rot = this.randomAngle();
+
+      this.applyAt(p, rot, prev);
+
+      // debug
+      this.onDebug?.({
+        p,
+        prev,
+        spacingWorld: this.spacingBaseWorld,
+        nextSpacingWorld: this.nextSpacingWorld,
+        distAccWorld: this.distAcc,
+        worldScale: this.getWorldScale ? this.getWorldScale() : 1,
+        capsuleRadius: this.capsuleRadius(),
+        rotation: rot,
+        isPreview: !!this.strokeArea,
+      });
 
       // reset accumulatore e nuova soglia con jitter
       this.distAcc = 0;
-      this.nextSpacing = this.spacingBase * (1 + (Math.random() * 2 - 1) * this.spacingJitter);
+      this.nextSpacingWorld = this.spacingBaseWorld * (1 + (Math.random() * 2 - 1) * this.spacingJitter);
     }
   }
 
   pointerUp() {
     if (this.accumulatePerStroke && this.strokeArea) {
-      const geo = this.strokeArea.geometry;
-      if (this.mode === "paint") this.area.addStamp(geo);
-      else this.area.eraseStamp(geo);
-      this.strokeArea = null;
-      this.scheduleChange(); // notifica “finale”
-    }
-    this.isDown = false;
-    this.lastPos = null;
-    this.lastP = null;
-    this.distAcc = 0;
+    let geo = this.strokeArea.geometry; // MultiPolygon
+
+    // 🔹 semplifica leggermente il bordo per eliminare seghettature microscopiche
+    geo = this.simplifyMultiPolygon(geo, 8 * this.baseScale); // epsilon = 8px circa
+
+    if (this.mode === "paint") this.area.addStamp(geo);
+    else this.area.eraseStamp(geo);
+
+    this.strokeArea = null;
+    this.scheduleChange();
+}
   }
+
 
   // === core ===
   private applyAt(p: Vec2, rotationRad: number, prev: Vec2 | null) {
@@ -183,13 +239,12 @@ export class BrushEngine {
   }
 
   private capsuleRadius(): number {
-    // raggio ~ metà spaziatura per “riempire” bene tra i timbri
-    const bySpacing = 0.45 * this.spacingBase;
+    // per riempire bene tra timbri diradati: ~ 0.45 * spacing (in world) o fallback su scale
+    const bySpacing = 0.45 * this.spacingBaseWorld;
     const byScale = Math.max(6, 8 * this.baseScale);
     return this.capsuleRadiusPx ?? Math.max(bySpacing, byScale);
   }
 
-  // capsula: rettangolo + 2 semicirconferenze (pochi step = veloce)
   private makeCapsule(a: Vec2, b: Vec2, r: number, steps = 4): Ring {
     const [x1, y1] = a, [x2, y2] = b;
     const dx = x2 - x1, dy = y2 - y1;
@@ -228,4 +283,56 @@ export class BrushEngine {
       this.onChange?.();
     });
   }
+
+  // Douglas–Peucker simplification leggera
+private simplifyMultiPolygon(mp: MultiPolygon, epsilon: number): MultiPolygon {
+  const simplifyRing = (ring: Vec2[]): Vec2[] => {
+    const sqEps = epsilon * epsilon;
+    const keep = new Array(ring.length).fill(false);
+    keep[0] = keep[ring.length - 1] = true;
+
+    const stack: [number, number][] = [[0, ring.length - 1]];
+    while (stack.length > 0) {
+      const [i1, i2] = stack.pop()!;
+      let maxDist = 0;
+      let idx = -1;
+      const [x1, y1] = ring[i1];
+      const [x2, y2] = ring[i2];
+      const dx = x2 - x1;
+      const dy = y2 - y1;
+
+      const len2 = dx * dx + dy * dy;
+      for (let i = i1 + 1; i < i2; i++) {
+        const [px, py] = ring[i];
+        const t = len2 ? ((px - x1) * dx + (py - y1) * dy) / len2 : 0;
+        const projx = x1 + t * dx;
+        const projy = y1 + t * dy;
+        const dist2 = (px - projx) ** 2 + (py - projy) ** 2;
+        if (dist2 > maxDist) {
+          maxDist = dist2;
+          idx = i;
+        }
+      }
+
+      if (maxDist > sqEps && idx !== -1) {
+        keep[idx] = true;
+        stack.push([i1, idx]);
+        stack.push([idx, i2]);
+      }
+    }
+    return ring.filter((_, i) => keep[i]);
+  };
+
+  const out: MultiPolygon = [];
+  for (const poly of mp) {
+    const newPoly: any[] = [];
+    for (const ring of poly) {
+      if (ring.length > 3) newPoly.push(simplifyRing(ring));
+      else newPoly.push(ring);
+    }
+    out.push(newPoly);
+  }
+  return out;
+}
+
 }

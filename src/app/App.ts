@@ -70,6 +70,66 @@ export function startEditor(): void {
   const debug = new PIXI.Graphics();
   editor.world.addChild(debug);
 
+  // === OVERLAY DEBUG TIMBRO CORRENTE ===
+const debugStamp = new PIXI.Graphics();
+editor.world.addChild(debugStamp);
+
+// pannellino numerico
+let debugInfo: any = null;
+const hud = document.createElement("div");
+hud.style.position = "fixed";
+hud.style.left = "10px";
+hud.style.bottom = "10px";
+hud.style.padding = "8px 10px";
+hud.style.background = "rgba(0,0,0,.55)";
+hud.style.color = "#fff";
+hud.style.font = "12px monospace";
+hud.style.borderRadius = "6px";
+hud.style.zIndex = "1000";
+hud.style.pointerEvents = "none";
+document.body.appendChild(hud);
+
+function drawLastStampOverlay() {
+  debugStamp.clear();
+  if (!debugInfo) return;
+
+  // punto corrente
+  const p = debugInfo.p as Vec2;
+  if (p) {
+    debugStamp.lineStyle(0);
+    debugStamp.beginFill(0xffff00, 0.8);
+    debugStamp.drawCircle(p[0], p[1], 2.5);
+    debugStamp.endFill();
+  }
+
+  // capsula attesa (solo raggio come feedback)
+  if (debugInfo.prev) {
+    const a = debugInfo.prev as Vec2;
+    const b = debugInfo.p as Vec2;
+    debugStamp.lineStyle(1, 0xffa500, 1);
+    debugStamp.moveTo(a[0], a[1]);
+    debugStamp.lineTo(b[0], b[1]);
+    const r = debugInfo.capsuleRadius as number;
+    debugStamp.lineStyle(0);
+    debugStamp.beginFill(0xffa500, 0.25);
+    debugStamp.drawCircle(a[0], a[1], r);
+    debugStamp.drawCircle(b[0], b[1], r);
+    debugStamp.endFill();
+  }
+
+  // HUD numerico
+  const lines = [
+    `scale(world)= ${ (debugInfo.worldScale as number).toFixed(2) }`,
+    `spacingW= ${ (debugInfo.spacingWorld as number).toFixed(1) }`,
+    `nextW= ${ (debugInfo.nextSpacingWorld as number).toFixed(1) }`,
+    `accW= ${ (debugInfo.distAccWorld as number).toFixed(1) }`,
+    `capsR= ${ (debugInfo.capsuleRadius as number).toFixed(1) }`,
+    `rot= ${ (debugInfo.rotation as number).toFixed(2) }`,
+  ];
+  hud.innerText = lines.join("\n");
+}
+
+
   // throttle del bordo (evita ridisegni multipli nella stessa frame)
   let debugQueued = false;
   function scheduleDrawDebug(preview: MultiPolygon | null = null) {
@@ -136,34 +196,42 @@ export function startEditor(): void {
     brush.setScale(brushScale);
   });
 
-  // --- BRUSH ENGINE: spaziatura “diradata” + jitter ---
-  const brush = new BrushEngine({
-    area,
-    scale: brushScale,
-    rotRange: [0, Math.PI * 2] as [number, number],
-    accumulatePerStroke: true,
-    useCapsule: true,
+// --- BRUSH ENGINE: spaziatura in pixel (invariante allo zoom) ---
+const brush = new BrushEngine({
+  area,
+  scale: brushScale,
+  rotRange: [0, Math.PI * 2] as [number, number],
+  accumulatePerStroke: true,
+  useCapsule: true,
 
-    // spaziatura proporzionale alla size del brush (dirada i timbri!)
-    spacing: Math.max(12, 0.9 * brushSize),
-    spacingJitter: 0.18,        // ±18% di variazione
-    minStampIntervalMs: 0,      // puoi provare 10–16ms se vuoi limitare FPS altissimi
+  // DIRADAMENTO REALE: in pixel schermo
+  spacingPx: Math.max(14, 0.8 * brushSize),
+  spacingJitter: 0.18,          // ±18%
+  minStampIntervalMs: 0,
+  getWorldScale: () => editor.world.scale.x,
 
-    onChange: () => {
-      scheduleDrawDebug(brush.getPreview());
-    },
-  });
-  brush.setMode("paint");
+  onChange: () => {
+    scheduleDrawDebug(brush.getPreview());
+  },
 
-  new BrushSelector((size) => {
+  // DEBUG: ogni timbro
+  onDebug: (info) => {
+    debugInfo = info;            // aggiorna pannello
+    drawLastStampOverlay();      // disegna stamp + capsula
+  },
+});
+brush.setMode("paint");
+
+// aggiorna con la UI
+new BrushSelector((size) => {
   brushSize = size;
   brushScale = brushSize / 64;
   brush.setScale(brushScale);
-
-  // tieni spacing legato alla size
-  brush.setSpacing(Math.max(12, 0.7 * brushSize));
+  brush.setSpacingPx(Math.max(14, 0.8 * brushSize)); // in pixel
   brush.setSpacingJitter(0.18);
 });
+
+
 
   // world coords
   function worldFromEvent(e: PointerEvent): Vec2 {
