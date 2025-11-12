@@ -157,19 +157,42 @@ export function startEditor(): void {
   brush.setMode("paint");
 
   // Crea lo slider
-const roughnessInput = document.createElement("input");
-roughnessInput.type = "range";
-roughnessInput.min = "1";
-roughnessInput.max = "32";
-roughnessInput.step = "1";
-roughnessInput.value = "32";
-roughnessInput.style.position = "absolute";
-roughnessInput.style.bottom = "16px";
-roughnessInput.style.left = "50%";
-roughnessInput.style.transform = "translateX(-50%)";
-roughnessInput.style.width = "300px";
-roughnessInput.style.zIndex = "10";
-document.body.appendChild(roughnessInput);
+  const roughnessInput = document.createElement("input");
+  roughnessInput.type = "range";
+  roughnessInput.min = "1";
+  roughnessInput.max = "32";
+  roughnessInput.step = "1";
+  roughnessInput.value = "32";
+  roughnessInput.style.position = "absolute";
+  roughnessInput.style.bottom = "16px";
+  roughnessInput.style.left = "50%";
+  roughnessInput.style.transform = "translateX(-50%)";
+  roughnessInput.style.width = "300px";
+  roughnessInput.style.zIndex = "10";
+  document.body.appendChild(roughnessInput);
+
+  // --- SLIDER BRUSH SIZE ---
+  const sizeInput = document.createElement("input");
+  sizeInput.type = "range";
+  sizeInput.min = "16";
+  sizeInput.max = "256";
+  sizeInput.step = "8";
+  sizeInput.value = brushSize.toString();
+  sizeInput.style.position = "absolute";
+  sizeInput.style.bottom = "48px";
+  sizeInput.style.left = "50%";
+  sizeInput.style.transform = "translateX(-50%)";
+  sizeInput.style.width = "300px";
+  sizeInput.style.zIndex = "10";
+  document.body.appendChild(sizeInput);
+
+  // Aggiorna la dimensione del brush in tempo reale
+  sizeInput.addEventListener("input", () => {
+    brushSize = parseInt(sizeInput.value, 10);
+    brushScale = brushSize / 64; // stesso rapporto che usi attualmente
+    brush.setScale(brushScale);
+  });
+
 
 // Aggiorna il poligono in base alla roughness
 roughnessInput.addEventListener("input", () => {
@@ -210,7 +233,7 @@ roughnessInput.addEventListener("input", () => {
     const zoomFactor = 1.05;
     const scaleChange = e.deltaY < 0 ? zoomFactor : 1 / zoomFactor;
     const newScale = editor.world.scale.x * scaleChange;
-    const clampedScale = Math.min(Math.max(newScale, 0.5), 3);
+    const clampedScale = Math.min(Math.max(newScale, 0.1), 3); // 🔹 ora puoi zoomare molto di più out
     editor.world.scale.set(clampedScale);
   });
 
