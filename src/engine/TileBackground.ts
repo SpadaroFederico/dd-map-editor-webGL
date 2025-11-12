@@ -67,7 +67,7 @@ export class TileBackground {
         texture.updateUvs(); // 🔹 forza aggiornamento UVs
 
         const sprite = new PIXI.Sprite(texture);
-        sprite.scale.set(0.25); // 512 * 0.25 = 128 px visivi per tile
+        sprite.scale.set(1); // 512 * 0.25 = 128 px visivi per tile
         sprite.x = x * this.tileSize;
         sprite.y = y * this.tileSize;
         sprite.width = this.tileSize;
