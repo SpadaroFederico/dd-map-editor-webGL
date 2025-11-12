@@ -1,4 +1,3 @@
-// src/app/App.ts
 import * as PIXI from "pixi.js";
 import { PixiApp } from "../engine/PixiApp";
 import { EditorControls } from "../engine/EditorControls";
@@ -13,17 +12,21 @@ import { BrushEngine } from "../brush/brushEngine";
 import { setStamps } from "../data/stamps";
 import type { Polygon, Vec2, MultiPolygon } from "../terrain/terrainArea";
 
+// --- SLIDER ROUGHNESS ---
+import { getRoughnessPolygon } from "../data/roughnessStamps";
+
 export function startEditor(): void {
   const container = document.body;
   const editor = new PixiApp(container);
   const canvas = editor.app.renderer.view as HTMLCanvasElement;
+  let debugInfo: any = null;
 
-  // Miglioriamo performance: niente sort per zIndex (usiamo l'ordine di addChild)
+  // Migliora performance: niente sort per zIndex
   editor.world.sortableChildren = false;
 
   const controls = new EditorControls(canvas, editor.world);
 
-  // --- REGISTRA IL TUO POLIGONO ---
+  // --- REGISTRA POLIGONO BASE ---
   function toRingFromFlat(
     flat: number[],
     scale = 128,
@@ -48,7 +51,7 @@ export function startEditor(): void {
   const myFirstStamp: Polygon = [ring];
   setStamps([myFirstStamp]);
 
-  // --- SOLO LAYER DI SFONDO ---
+  // --- BACKGROUND ---
   let currentBg: TileBackground | null = null;
   const mountBackground = (type: "grass" | "dirt" | "water") => {
     if (currentBg) {
@@ -56,21 +59,20 @@ export function startEditor(): void {
       currentBg = null;
     }
     currentBg = new TileBackground(editor.app, type, 64);
-    editor.world.addChild(currentBg.container); // fondo
+    editor.world.addChild(currentBg.container);
   };
   mountBackground("grass");
 
-  // --- AREA & MESH (mesh nascosta; usiamo solo bordo) ---
+  // --- AREA & MESH ---
   const area = new TerrainArea();
   const mesh = new TerrainMesh(editor.app, 1.25);
   editor.world.addChild(mesh.container);
-  mesh.container.visible = false; // nessun fill, solo contorno
+  mesh.container.visible = false;
 
-  // --- BORDO VIOLA ---
+  // --- DEBUG BORDER ---
   const debug = new PIXI.Graphics();
   editor.world.addChild(debug);
 
-  // throttle del bordo (evita ridisegni multipli nella stessa frame)
   let debugQueued = false;
   function scheduleDrawDebug(preview: MultiPolygon | null = null) {
     if (debugQueued) return;
@@ -85,7 +87,6 @@ export function startEditor(): void {
     debug.clear();
     debug.lineStyle(2, 0xff00ff, 0.9);
 
-    // 1) area consolidata (violetto pieno)
     const mp = area.geometry;
     for (const poly of mp) {
       for (let r = 0; r < poly.length; r++) {
@@ -97,7 +98,7 @@ export function startEditor(): void {
       }
     }
 
-    // 2) anteprima della pennellata (tratteggiata/alpha bassa per distinguere)
+    // anteprima tratteggiata
     if (preview && preview.length > 0) {
       debug.lineStyle(2, 0xff00ff, 0.45);
       for (const poly of preview) {
@@ -112,7 +113,6 @@ export function startEditor(): void {
     }
   }
 
-  // Texture (in futuro, se riattivi il fill)
   async function setHighlightTexture(type: "grass" | "dirt" | "water") {
     const url =
       type === "dirt"
@@ -136,23 +136,52 @@ export function startEditor(): void {
     brush.setScale(brushScale);
   });
 
-  // --- BRUSH ENGINE (rotazione, capsule leggere, anteprima veloce) ---
+  // --- BRUSH ENGINE ---
   const brush = new BrushEngine({
     area,
-    spacing: 10,
     scale: brushScale,
     rotRange: [0, Math.PI * 2] as [number, number],
     accumulatePerStroke: true,
-    useCapsule: true,
-
-    // onChange leggero: solo bordo (area + preview), nessuna mesh.update
+    useCapsule: false,
+    spacing: Math.max(24, 1.4 * brushSize),
+    spacingJitter: 0.22,
     onChange: () => {
-      scheduleDrawDebug(brush.getPreview());
+      const preview = brush.getPreview();
+      if (!preview) return;
+      scheduleDrawDebug(preview);
+    },
+    onDebug: (info: any) => {
+      debugInfo = info;
     },
   });
   brush.setMode("paint");
 
-  // world coords
+  // Crea lo slider
+const roughnessInput = document.createElement("input");
+roughnessInput.type = "range";
+roughnessInput.min = "1";
+roughnessInput.max = "32";
+roughnessInput.step = "1";
+roughnessInput.value = "32";
+roughnessInput.style.position = "absolute";
+roughnessInput.style.bottom = "16px";
+roughnessInput.style.left = "50%";
+roughnessInput.style.transform = "translateX(-50%)";
+roughnessInput.style.width = "300px";
+roughnessInput.style.zIndex = "10";
+document.body.appendChild(roughnessInput);
+
+// Aggiorna il poligono in base alla roughness
+roughnessInput.addEventListener("input", () => {
+  const level = parseInt(roughnessInput.value, 10);
+  const newPoly = getRoughnessPolygon(level);
+  setStamps([newPoly]);
+  // Ridisegna preview
+  const preview = brush.getPreview();
+  if (preview) scheduleDrawDebug(preview);
+});
+
+  // --- POINTER ---
   function worldFromEvent(e: PointerEvent): Vec2 {
     const rect = canvas.getBoundingClientRect();
     const x = (e.clientX - rect.left - editor.world.x) / editor.world.scale.x;
@@ -160,7 +189,6 @@ export function startEditor(): void {
     return [x, y];
   }
 
-  // pointer
   canvas.addEventListener("pointerdown", (e) => {
     if (controls.isPanActive) return;
     brush.pointerDown(worldFromEvent(e));
@@ -172,15 +200,11 @@ export function startEditor(): void {
   window.addEventListener("pointerup", () => {
     if (controls.isPanActive) return;
     brush.pointerUp();
-
-    // alla fine, UNA sola triangolazione (se un giorno riattivi la mesh)
     mesh.update(area.geometry);
-
-    // ridisegna bordo consolidato
     scheduleDrawDebug(null);
   });
 
-  // Zoom
+  // --- ZOOM ---
   canvas.addEventListener("wheel", (e: WheelEvent) => {
     e.preventDefault();
     const zoomFactor = 1.05;
@@ -190,7 +214,7 @@ export function startEditor(): void {
     editor.world.scale.set(clampedScale);
   });
 
-  // init
-  mesh.update(area.geometry);   // prepara la mesh (anche se invisibile)
+  // --- INIT ---
+  mesh.update(area.geometry);
   drawDebug();
 }

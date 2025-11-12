@@ -1,4 +1,3 @@
-// src/brush/brushEngine.ts
 import type { Vec2, Polygon, MultiPolygon, Ring } from "../terrain/terrainArea";
 import { TerrainArea } from "../terrain/terrainArea";
 import { transformStamp, getStamp, stampCount } from "../data/stamps";
@@ -8,13 +7,14 @@ export type BrushMode = "paint" | "erase";
 type Opts = {
   area: TerrainArea;
   spacing?: number;
+  spacingJitter?: number; // frastagliatura controllata
   scale?: number;
   rotRange?: [number, number];
   onChange?: () => void;
-
   accumulatePerStroke?: boolean;
   useCapsule?: boolean;
   capsuleRadiusPx?: number;
+  onDebug?: (info: any) => void;
 };
 
 export class BrushEngine {
@@ -34,6 +34,7 @@ export class BrushEngine {
 
   private useCapsule: boolean;
   private capsuleRadiusPx?: number;
+  private spacingJitter: number = 0.2; // ±20% di variazione
 
   constructor(opts: Opts) {
     this.area = opts.area;
@@ -43,8 +44,12 @@ export class BrushEngine {
     this.onChange = opts.onChange;
 
     this.accumulatePerStroke = opts.accumulatePerStroke ?? true;
-    this.useCapsule = opts.useCapsule ?? true;
+    this.useCapsule = opts.useCapsule ?? false;
     this.capsuleRadiusPx = opts.capsuleRadiusPx;
+
+    // --- Gestione frastagliatura e spaziatura ---
+    this.spacing = Math.max(8, this.spacing * 0.5);
+    this.spacingJitter = opts.spacingJitter ?? 0.15;
   }
 
   setMode(mode: BrushMode) { this.mode = mode; }
@@ -59,18 +64,22 @@ export class BrushEngine {
   pointerDown(p: Vec2) {
     this.isDown = true;
     this.lastPos = p;
-
-    if (this.accumulatePerStroke) {
-      this.strokeArea = new TerrainArea();
-    }
+    if (this.accumulatePerStroke) this.strokeArea = new TerrainArea();
     this.applyAt(p, this.randomAngle(), null);
   }
 
   pointerMove(p: Vec2) {
     if (!this.isDown || !this.lastPos) return;
+
     const dx = p[0] - this.lastPos[0];
     const dy = p[1] - this.lastPos[1];
-    if (dx * dx + dy * dy >= this.spacing * this.spacing) {
+    const dist = Math.hypot(dx, dy);
+
+    // jitter casuale: variazione ±20%
+    const jitterFactor = 1 + (Math.random() * 2 - 1) * this.spacingJitter;
+    const effectiveSpacing = this.spacing * jitterFactor;
+
+    if (dist >= effectiveSpacing) {
       const prev = this.lastPos;
       this.lastPos = p;
       this.applyAt(p, this.randomAngle(), prev);
@@ -78,13 +87,12 @@ export class BrushEngine {
   }
 
   pointerUp() {
-    // Consolida UNA VOLTA alla fine
     if (this.accumulatePerStroke && this.strokeArea) {
-      const geo = this.strokeArea.geometry; // MultiPolygon
+      const geo = this.strokeArea.geometry;
       if (this.mode === "paint") this.area.addStamp(geo);
       else this.area.eraseStamp(geo);
       this.strokeArea = null;
-      this.scheduleChange(); // notifica “finale”
+      this.scheduleChange();
     }
     this.isDown = false;
     this.lastPos = null;
@@ -95,7 +103,7 @@ export class BrushEngine {
     if (stampCount() === 0) return;
     const base: Polygon = getStamp(0);
 
-    // 1) stamp ruotato
+    // stamp ruotato
     const poly = transformStamp(base, {
       translate: p,
       scale: this.baseScale,
@@ -103,22 +111,17 @@ export class BrushEngine {
       around: "outer-centroid",
     });
 
-    // 2) capsula opzionale tra prev e p (pochi step per performance)
-    const capsuleMP: MultiPolygon | null =
-      (this.useCapsule && prev) ? [[ this.makeCapsule(prev, p, this.capsuleRadius(), 4) ]] : null;
+    // capsule disattivate
+    const capsuleMP: MultiPolygon | null = null;
 
     if (this.accumulatePerStroke) {
-      // Solo accumulo in strokeArea (nessuna union con l'area globale qui)
       if (!this.strokeArea) this.strokeArea = new TerrainArea();
       this.strokeArea.addStamp(poly);
       if (capsuleMP) this.strokeArea.addStamp(capsuleMP);
-
-      // notifica “leggera”: l'app disegnerà solo il bordo dell’anteprima
       this.onChange?.();
       return;
     }
 
-    // Se non accumuli, fondi subito (meno reattivo, sconsigliato)
     if (this.mode === "paint") {
       this.area.addStamp(poly);
       if (capsuleMP) this.area.addStamp(capsuleMP);
@@ -133,14 +136,12 @@ export class BrushEngine {
     return this.capsuleRadiusPx ?? Math.max(6, 8 * this.baseScale);
   }
 
-  // capsula: rettangolo + 2 semicirconferenze (step basso = più veloce)
   private makeCapsule(a: Vec2, b: Vec2, r: number, steps = 4): Ring {
     const [x1, y1] = a, [x2, y2] = b;
     const dx = x2 - x1, dy = y2 - y1;
     const len = Math.hypot(dx, dy) || 1;
     const ux = dx / len, uy = dy / len;
     const nx = -uy, ny = ux;
-
     const pts: Vec2[] = [];
     for (let i = 0; i <= steps; i++) {
       const t = i / steps;
