@@ -34,9 +34,23 @@ export class TileBackground {
     }
 
     PIXI.Assets.load(texturePaths).then(() => {
-      this.textures = texturePaths.map(
-        (p) => PIXI.Assets.get(p) as PIXI.Texture
-      );
+      this.textures = texturePaths.map((p) => {
+        const tex = PIXI.Assets.get(p) as PIXI.Texture;
+
+        // 🔹 Trattamento diverso per grass vs dirt/water
+        if (type === "grass") {
+          // l'erba ha molti dettagli → meglio ammorbidire a zoom bassi
+          tex.baseTexture.mipmap = PIXI.MIPMAP_MODES.ON;
+          tex.baseTexture.scaleMode = SCALE_MODES.LINEAR;
+        } else {
+          // dirt e water restano belle pixellose/nitide
+          tex.baseTexture.mipmap = PIXI.MIPMAP_MODES.OFF;
+          tex.baseTexture.scaleMode = SCALE_MODES.NEAREST;
+        }
+
+        tex.updateUvs();
+        return tex;
+      });
       this.generateTiles();
     });
   }
