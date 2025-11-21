@@ -8,20 +8,21 @@ export class TileBackground {
   tilesPerCol: number;
   textures: PIXI.Texture[] = [];
 
+  public ready: Promise<void>;
+
   constructor(
     app: PIXI.Application,
     type: "grass" | "dirt" | "water",
     tileSize = 512,
-    worldSize = 2072 // 🔹 dimensione massima in pixel (mappa più grande)
+    worldSize = 2072
   ) {
     this.container = new PIXI.Container();
     this.tileSize = tileSize;
 
-    // 🔹 Numero di tile basato sulla dimensione totale del mondo
     this.tilesPerRow = Math.ceil(worldSize / tileSize);
     this.tilesPerCol = Math.ceil(worldSize / tileSize);
 
-    // ✅ Percorsi texture corretti
+    // Percorsi texture
     let texturePaths: string[] = [];
     if (type === "dirt") {
       texturePaths = Array.from({ length: 15 }, (_, i) =>
@@ -33,17 +34,16 @@ export class TileBackground {
       );
     }
 
-    PIXI.Assets.load(texturePaths).then(() => {
+    // 🔥 FIX IMPORTANTE:
+    // ready = caricamento texture + generazione tile
+    this.ready = PIXI.Assets.load(texturePaths).then(() => {
       this.textures = texturePaths.map((p) => {
         const tex = PIXI.Assets.get(p) as PIXI.Texture;
 
-        // 🔹 Trattamento diverso per grass vs dirt/water
         if (type === "grass") {
-          // l'erba ha molti dettagli → meglio ammorbidire a zoom bassi
           tex.baseTexture.mipmap = PIXI.MIPMAP_MODES.ON;
           tex.baseTexture.scaleMode = SCALE_MODES.LINEAR;
         } else {
-          // dirt e water restano belle pixellose/nitide
           tex.baseTexture.mipmap = PIXI.MIPMAP_MODES.OFF;
           tex.baseTexture.scaleMode = SCALE_MODES.NEAREST;
         }
@@ -51,6 +51,8 @@ export class TileBackground {
         tex.updateUvs();
         return tex;
       });
+
+      // 🔥 genera i tile SOLO quando le texture sono cariche
       this.generateTiles();
     });
   }

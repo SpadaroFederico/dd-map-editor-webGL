@@ -7,7 +7,7 @@ export type BrushMode = "paint" | "erase";
 type Opts = {
   area: TerrainArea;
   spacing?: number;
-  spacingJitter?: number; // frastagliatura controllata
+  spacingJitter?: number;
   scale?: number;
   rotRange?: [number, number];
   onChange?: () => void;
@@ -34,7 +34,7 @@ export class BrushEngine {
 
   private useCapsule: boolean;
   private capsuleRadiusPx?: number;
-  private spacingJitter: number = 0.2; // ±20% di variazione
+  private spacingJitter: number = 0.2;
 
   constructor(opts: Opts) {
     this.area = opts.area;
@@ -47,7 +47,6 @@ export class BrushEngine {
     this.useCapsule = opts.useCapsule ?? false;
     this.capsuleRadiusPx = opts.capsuleRadiusPx;
 
-    // --- Gestione frastagliatura e spaziatura ---
     this.spacing = Math.max(8, this.spacing * 0.5);
     this.spacingJitter = opts.spacingJitter ?? 0.15;
   }
@@ -55,8 +54,8 @@ export class BrushEngine {
   setMode(mode: BrushMode) { this.mode = mode; }
   setScale(s: number) { this.baseScale = s; }
   setSpacing(px: number) { this.spacing = Math.max(1, px); }
+  setArea(area: TerrainArea) { this.area = area; }
 
-  /** Geometria temporanea della pennellata in corso (MultiPolygon) */
   getPreview(): MultiPolygon | null {
     return this.strokeArea ? this.strokeArea.geometry : null;
   }
@@ -75,7 +74,6 @@ export class BrushEngine {
     const dy = p[1] - this.lastPos[1];
     const dist = Math.hypot(dx, dy);
 
-    // jitter casuale: variazione ±20%
     const jitterFactor = 1 + (Math.random() * 2 - 1) * this.spacingJitter;
     const effectiveSpacing = this.spacing * jitterFactor;
 
@@ -91,6 +89,7 @@ export class BrushEngine {
       const geo = this.strokeArea.geometry;
       if (this.mode === "paint") this.area.addStamp(geo);
       else this.area.eraseStamp(geo);
+
       this.strokeArea = null;
       this.scheduleChange();
     }
@@ -98,12 +97,13 @@ export class BrushEngine {
     this.lastPos = null;
   }
 
-  // --- core ---
+  // ---------------------------------------------------
+  // 🔥 APPLY
+  // ---------------------------------------------------
   private applyAt(p: Vec2, rotationRad: number, prev: Vec2 | null) {
     if (stampCount() === 0) return;
     const base: Polygon = getStamp(0);
 
-    // stamp ruotato
     const poly = transformStamp(base, {
       translate: p,
       scale: this.baseScale,
@@ -111,53 +111,41 @@ export class BrushEngine {
       around: "outer-centroid",
     });
 
-    // capsule disattivate
-    const capsuleMP: MultiPolygon | null = null;
+    const clean = this.cleanPolygon(poly);
 
     if (this.accumulatePerStroke) {
       if (!this.strokeArea) this.strokeArea = new TerrainArea();
-      this.strokeArea.addStamp(poly);
-      if (capsuleMP) this.strokeArea.addStamp(capsuleMP);
+      this.strokeArea.addStamp(clean);
       this.onChange?.();
       return;
     }
 
-    if (this.mode === "paint") {
-      this.area.addStamp(poly);
-      if (capsuleMP) this.area.addStamp(capsuleMP);
-    } else {
-      this.area.eraseStamp(poly);
-      if (capsuleMP) this.area.eraseStamp(capsuleMP);
-    }
+    if (this.mode === "paint") this.area.addStamp(clean);
+    else this.area.eraseStamp(clean);
+
     this.scheduleChange();
   }
 
-  private capsuleRadius(): number {
-    return this.capsuleRadiusPx ?? Math.max(6, 8 * this.baseScale);
-  }
+  // ---------------------------------------------------
+  // 🔧 CLEAN POLYGON — rimuove auto-intersezioni interne
+  // ---------------------------------------------------
+  private cleanPolygon(poly: Polygon): Polygon {
+    if (!poly || !poly[0] || poly[0].length < 3) return poly;
 
-  private makeCapsule(a: Vec2, b: Vec2, r: number, steps = 4): Ring {
-    const [x1, y1] = a, [x2, y2] = b;
-    const dx = x2 - x1, dy = y2 - y1;
-    const len = Math.hypot(dx, dy) || 1;
-    const ux = dx / len, uy = dy / len;
-    const nx = -uy, ny = ux;
-    const pts: Vec2[] = [];
-    for (let i = 0; i <= steps; i++) {
-      const t = i / steps;
-      const ang = Math.PI * t - Math.PI / 2;
-      const cx = x2 + nx * (Math.cos(ang) * r) + ux * (Math.sin(ang) * r);
-      const cy = y2 + ny * (Math.cos(ang) * r) + uy * (Math.sin(ang) * r);
-      pts.push([cx, cy]);
+    const ring = poly[0];
+
+    const cleaned: Ring = [];
+    cleaned.push(ring[0]);
+
+    for (let i = 1; i < ring.length; i++) {
+      const [px, py] = cleaned[cleaned.length - 1];
+      const [cx, cy] = ring[i];
+      const dx = cx - px;
+      const dy = cy - py;
+      if (dx * dx + dy * dy > 1) cleaned.push([cx, cy]);
     }
-    for (let i = 0; i <= steps; i++) {
-      const t = i / steps;
-      const ang = Math.PI * t + Math.PI / 2;
-      const cx = x1 + nx * (Math.cos(ang) * r) + ux * (Math.sin(ang) * r);
-      const cy = y1 + ny * (Math.cos(ang) * r) + uy * (Math.sin(ang) * r);
-      pts.push([cx, cy]);
-    }
-    return pts as Ring;
+
+    return [cleaned];
   }
 
   private randomAngle(): number {

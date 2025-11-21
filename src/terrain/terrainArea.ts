@@ -1,19 +1,19 @@
 // src/terrain/terrainArea.ts
-// Stato vettoriale dell'area esposta (MultiPolygon) con union/difference.
-// Import robusto di polygon-clipping (compatibile CJS/ESM).
-
 import * as pcRaw from "polygon-clipping";
 
-// Compat interop: alcune build espongono default, altre named
+// Compat interop CJS/ESM
 const pc: any = (pcRaw as any)?.default ?? pcRaw;
 
 export type Vec2 = [number, number];
-export type Ring = Vec2[];            // contorno chiuso: ultimo punto NON ripetuto
-export type Polygon = Ring[];         // [outer, ...holes]
-export type MultiPolygon = Polygon[]; // multi-poligono
+export type Ring = Vec2[];
+export type Polygon = Ring[];
+export type MultiPolygon = Polygon[];
 
+// Clone
 function cloneMP(mp: MultiPolygon): MultiPolygon {
-  return mp.map((poly) => poly.map((ring) => ring.map((p) => [p[0], p[1]] as Vec2)));
+  return mp.map(poly =>
+    poly.map(ring => ring.map(p => [p[0], p[1]] as Vec2))
+  );
 }
 
 function polygonArea(ring: Ring): number {
@@ -37,8 +37,8 @@ function filterTiny(mp: MultiPolygon, minArea = 1e-2): MultiPolygon {
   return out;
 }
 
+// Normalize
 function toMultiPolygon(input: Polygon | MultiPolygon): MultiPolygon {
-  // MultiPolygon?
   if (
     Array.isArray(input) &&
     Array.isArray(input[0]) &&
@@ -47,7 +47,6 @@ function toMultiPolygon(input: Polygon | MultiPolygon): MultiPolygon {
   ) {
     return input as MultiPolygon;
   }
-  // Polygon?
   if (
     Array.isArray(input) &&
     Array.isArray((input as any)[0]) &&
@@ -56,7 +55,7 @@ function toMultiPolygon(input: Polygon | MultiPolygon): MultiPolygon {
   ) {
     return [input as Polygon];
   }
-  throw new Error("Invalid polygon format for union/difference");
+  throw new Error("Invalid polygon format");
 }
 
 export class TerrainArea {
@@ -74,18 +73,16 @@ export class TerrainArea {
     this.mp = [];
   }
 
+  // 👉 OGNI STAMP VIENE AGGIUNTO COME POLIGONO SEPARATO
+  //    (NON SI FA UNION — risolve i buchi/blobs)
   addStamp(stamp: Polygon | MultiPolygon) {
-    const add = toMultiPolygon(stamp);
-    if (this.mp.length === 0) {
-      this.mp = filterTiny(cloneMP(add));
-      return;
-    }
-    const res = pc.union(this.mp, add) as MultiPolygon;
-    this.mp = filterTiny(res);
+    const mpAdd = toMultiPolygon(stamp);
+    this.mp.push(...cloneMP(mpAdd));
   }
 
   eraseStamp(stamp: Polygon | MultiPolygon) {
     if (this.mp.length === 0) return;
+
     const sub = toMultiPolygon(stamp);
     const res = pc.difference(this.mp, sub) as MultiPolygon;
     this.mp = filterTiny(res);

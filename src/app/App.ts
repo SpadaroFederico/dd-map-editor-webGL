@@ -14,65 +14,60 @@ import type { Polygon, Vec2, MultiPolygon, Ring } from "../terrain/terrainArea";
 
 import { getRoughnessPolygon } from "../data/roughnessStamps";
 
-import { Sidebar } from "../ui/Sidebar";
-
 type FillType = "grass" | "dirt" | "water";
 const FILL_TYPES: FillType[] = ["grass", "dirt", "water"];
 let currentRoughness = 32; // valore iniziale dello slider
 
+// ======================================================
+// 🔥 SISTEMA A LAYER TEMPORALI (una pennellata = un layer)
+// ======================================================
 
-  // Spaziatura in base alla dimensione del brush e alla roughness
-  function spacingFromSize(size: number, roughness: number): number {
-    // normalizziamo la roughness (1–32)
-    const r = Math.max(1, Math.min(32, roughness));
-
-    // più la roughness è alta, più stringiamo la spaziatura
-    // (r=16 → factor ≈1, r=32 → factor ≈1.4)
-    const roughFactor = 1 + (r - 16) / 40;
-
-    let base: number;
-
-    if (size <= 24) {
-      // pennelli minuscoli: timbri quasi attaccati
-      base = size * 0.12;              // es 16 → 1.9 px circa
-    } else if (size <= 48) {
-      base = size * 0.25;              // es 32 → 8 px
-    } else if (size <= 96) {
-      base = size * 0.4;               // es 64 → 25.6 px
-    } else {
-      // pennelloni grandi
-      base = size * 0.65;
-    }
-
-    const spacing = base / roughFactor;
-
-    // mai meno di 1px per evitare esagerazioni, ma molto fitto sui piccoli
-    return Math.max(1, spacing);
-  }
-
-
-
-type FillLayer = {
+type StrokeLayer = {
   type: FillType;
   area: TerrainArea;
   mesh: TerrainMesh;
-  bg: TileBackground;
+  sprite: PIXI.Sprite;
   brush: BrushEngine;
-
-  // 🔹 NUOVO: anteprima del fill
-  previewMesh: TerrainMesh;
-  previewBg: TileBackground;
 };
 
-export function startEditor(): void {
-  const sidebar = new Sidebar();
+// lista di tutte le pennellate già fatte (in ordine temporale)
+const strokeLayers: StrokeLayer[] = [];
 
+// pennellata attualmente in corso
+let currentStroke: StrokeLayer | null = null;
+
+// tipo di terreno attualmente selezionato
+let currentFillType: FillType = "grass";
+
+// ------------------------------------------------------
+// Spaziatura in base alla dimensione del brush e roughness
+// ------------------------------------------------------
+function spacingFromSize(size: number, roughness: number): number {
+  const r = Math.max(1, Math.min(32, roughness));
+  const roughFactor = 1 + (r - 16) / 40;
+
+  let base: number;
+
+  if (size <= 24) {
+    base = size * 0.12;
+  } else if (size <= 48) {
+    base = size * 0.25;
+  } else if (size <= 96) {
+    base = size * 0.4;
+  } else {
+    base = size * 0.65;
+  }
+
+  const spacing = base / roughFactor;
+  return Math.max(1, spacing);
+}
+
+export function startEditor(): void {
   const container = document.body;
   const editor = new PixiApp(container);
   const canvas = editor.app.renderer.view as HTMLCanvasElement;
   let debugInfo: any = null;
   let lastPaintPos: Vec2 | null = null;
-
 
   editor.world.sortableChildren = false;
   const controls = new EditorControls(canvas, editor.world);
@@ -94,15 +89,29 @@ export function startEditor(): void {
   }
 
   const flat = [
-    -0.5875,-0.815625,-0.475,-0.821875,-0.16875,-0.596875,0,-0.703125,
-    0.28125,-0.603125,0.30625,-0.009375,0.0625,0.078125,-0.15625,0.378125,
-    -0.3,0.396875,-0.6125,0.090625,-0.4625,-0.078125,-0.8375,-0.484375
+    -0.5875, -0.815625, -0.475, -0.821875, -0.16875, -0.596875, 0, -0.703125,
+    0.28125, -0.603125, 0.30625, -0.009375, 0.0625, 0.078125, -0.15625,
+    0.378125, -0.3, 0.396875, -0.6125, 0.090625, -0.4625, -0.078125, -0.8375,
+    -0.484375,
   ];
   const ring = toRingFromFlat(flat, 128);
   const myFirstStamp: Polygon = [ring];
   setStamps([myFirstStamp]);
 
-  // --- BACKGROUND DI BASE ---
+  // ========================================================
+  // 🔥 RenderTexture per ogni terreno (grass/dirt/water)
+  //    con pattern di TileBackground generato UNA VOLTA
+  //    → ogni pennellata dello stesso terreno usa la stessa texture
+  // ========================================================
+  const worldSize = 2072; // deve combaciare con il tuo TileBackground
+
+  const terrainTextures: Record<FillType, PIXI.RenderTexture> = {
+    grass: PIXI.RenderTexture.create({ width: worldSize, height: worldSize }),
+    dirt: PIXI.RenderTexture.create({ width: worldSize, height: worldSize }),
+    water: PIXI.RenderTexture.create({ width: worldSize, height: worldSize }),
+  };
+
+  // --- BACKGROUND DI BASE (sotto a tutto) ---
   let baseBg: TileBackground | null = null;
   const mountBaseBackground = (type: FillType) => {
     if (baseBg) {
@@ -114,8 +123,35 @@ export function startEditor(): void {
   };
   mountBaseBackground("grass");
 
-  // --- LAYER DI FILL (uno per tipo) ---
-  const fillLayers: Record<FillType, FillLayer> = {} as any;
+  // ============================================================
+  // 🔥 GENERIAMO LE TILEBACKGROUND UNA SOLA VOLTA PER TERRENO
+  //    e le renderizziamo dentro le RenderTexture
+  // ============================================================
+  const tileBgForTexture: Record<FillType, TileBackground> = {
+    grass: new TileBackground(editor.app, "grass", 64, worldSize),
+    dirt: new TileBackground(editor.app, "dirt", 64, worldSize),
+    water: new TileBackground(editor.app, "water", 64, worldSize),
+  };
+
+  const bakedTypes = new Set<FillType>();
+
+  async function bakeTerrainTextures() {
+    for (const type of FILL_TYPES) {
+      const bg = tileBgForTexture[type];
+
+      await bg.ready; // 🔥 aspetta il caricamento delle texture
+      editor.app.renderer.render(bg.container, {
+        renderTexture: terrainTextures[type],
+      });
+    }
+
+    console.log("✔ Terrains baked!");
+  }
+
+  bakeTerrainTextures();
+
+
+  // --- PARAMETRI BRUSH GLOBALI ---
   let brushSize = 64;
   let brushScale = brushSize / 64;
 
@@ -135,70 +171,33 @@ export function startEditor(): void {
     });
   }
 
-  // Disegna tutti i ring di un MultiPolygon con lo stile corrente
   function drawMultiPolygon(mp: MultiPolygon) {
     for (const poly of mp) {
-      for (let r = 0; r < poly.length; r++) {
-        const ring = poly[r];
-        if (!ring || ring.length < 2) continue;
+      const ring = poly[0];   // <<< ONLY OUTER RING
 
-        debug.moveTo(ring[0][0], ring[0][1]);
-        for (let i = 1; i < ring.length; i++) {
-          debug.lineTo(ring[i][0], ring[i][1]);
-        }
-        debug.lineTo(ring[0][0], ring[0][1]);
+      if (!ring || ring.length < 2) continue;
+
+      debug.moveTo(ring[0][0], ring[0][1]);
+
+      for (let i = 1; i < ring.length; i++) {
+        debug.lineTo(ring[i][0], ring[i][1]);
       }
+
+      debug.lineTo(ring[0][0], ring[0][1]);
     }
   }
 
-    // Disegna, con lo stile corrente, TUTTE le aree dei layer di fill
-  function drawAllFillAreas() {
-    for (const type of FILL_TYPES) {
-      const area = fillLayers[type]?.area;
-      if (!area) continue;
-      const mp = area.geometry;
+  // Disegna, con lo stile corrente, TUTTE le aree di tutte le pennellate (vecchie + corrente)
+  function drawAllStrokeAreas() {
+    for (const s of strokeLayers) {
+      const mp = s.area.geometry;
       if (!mp || mp.length === 0) continue;
       drawMultiPolygon(mp);
     }
-  }
-
-
-  // crea tutti i layer di fill
-  for (const type of FILL_TYPES) {
-    const area = new TerrainArea();
-
-    // mesh + bg "reali"
-    const mesh = new TerrainMesh(editor.app, 1.25);
-    const bg = new TileBackground(editor.app, type, 64);
-
-    // 🔹 mesh + bg di ANTEPRIMA
-    const previewMesh = new TerrainMesh(editor.app, 1.25);
-    const previewBg = new TileBackground(editor.app, type, 64);
-    previewBg.container.alpha = 0.7;    // un po' trasparente
-    previewBg.container.visible = false; // nascosto di default
-
-    // ordine nello stage:
-    // baseBg (0) -> bg -> mesh (mask) -> previewBg -> previewMesh (mask)
-    editor.world.addChild(bg.container);
-    editor.world.addChild(mesh.container);
-
-    editor.world.addChild(previewBg.container);
-    editor.world.addChild(previewMesh.container);
-
-    // maschere
-    bg.container.mask = mesh.mask;
-    previewBg.container.mask = previewMesh.mask;
-
-    const brush = createBrushForArea(area);
-    fillLayers[type] = {
-      type,
-      area,
-      mesh,
-      bg,
-      brush,
-      previewMesh,
-      previewBg,
-    };
+    if (currentStroke) {
+      const mp = currentStroke.area.geometry;
+      if (mp && mp.length > 0) drawMultiPolygon(mp);
+    }
   }
 
   // ---------- OFFSET RING (verso l'esterno) ----------
@@ -206,7 +205,6 @@ export function startEditor(): void {
     const n = ring.length;
     if (!ring || n < 3) return ring;
 
-    // area firmata per sapere se è CW o CCW
     let area = 0;
     for (let i = 0; i < n; i++) {
       const [x1, y1] = ring[i];
@@ -231,19 +229,16 @@ export function startEditor(): void {
       const len2 = Math.hypot(vx2, vy2) || 1;
 
       let n1x = -vy1 / len1;
-      let n1y =  vx1 / len1;
+      let n1y = vx1 / len1;
       let n2x = -vy2 / len2;
-      let n2y =  vx2 / len2;
+      let n2y = vx2 / len2;
 
-      // normale media
       let mx = n1x + n2x;
       let my = n1y + n2y;
       const mlen = Math.hypot(mx, my) || 1;
       mx /= mlen;
       my /= mlen;
 
-      // dir: verso esterno. Se per caso lo vedi ancora verso dentro,
-      // cambia in "-orientation".
       const dir = -orientation;
 
       const ox = cx + mx * delta * dir;
@@ -279,15 +274,13 @@ export function startEditor(): void {
 
     let out: Ring = ring.map(([x, y]) => [x, y]);
 
-    // Soglie per smoothing "normale"
-    const thresholdSoft = 70;   // sopra questo → niente smoothing
-    const thresholdHard = 40;   // sotto questo → smoothing più forte
+    const thresholdSoft = 70;
+    const thresholdHard = 40;
     const maxExtraLambda = 0.45;
     const maxLambda = 0.95;
 
-    // Soglie per considerare un vertice un "picco" da collassare
-    const spikeAngle = 40;      // angolo molto acuto
-    const spikeEdgeMax = 70;    // segmenti abbastanza corti (px/py ↔ x/y ↔ nx/ny)
+    const spikeAngle = 40;
+    const spikeEdgeMax = 70;
 
     for (let it = 0; it < iterations; it++) {
       const cur = out;
@@ -299,7 +292,6 @@ export function startEditor(): void {
         const [px, py] = cur[(i - 1 + n) % n];
         const [nx, ny] = cur[(i + 1) % n];
 
-        // vettori verso i vicini
         let vx1 = px - x;
         let vy1 = py - y;
         let vx2 = nx - x;
@@ -318,33 +310,27 @@ export function startEditor(): void {
         vx2 /= len2;
         vy2 /= len2;
 
-        // angolo tra i due lati
         let dot = vx1 * vx2 + vy1 * vy2;
         dot = Math.max(-1, Math.min(1, dot));
         const angleRad = Math.acos(dot);
         const angleDeg = (angleRad * 180) / Math.PI;
 
-        // --- 1) PICCHI ESTREMI: collassa il punto sulla linea tra i vicini ---
-        if (
-          angleDeg < spikeAngle &&
-          Math.max(len1, len2) < spikeEdgeMax
-        ) {
+        // picchi estremi
+        if (angleDeg < spikeAngle && Math.max(len1, len2) < spikeEdgeMax) {
           const mx = (px + nx) * 0.5;
           const my = (py + ny) * 0.5;
           next.push([mx, my]);
           continue;
         }
 
-        // --- 2) Angoli normali: smoothing adattivo come prima ---
         if (angleDeg > thresholdSoft) {
-          // angolo ampio → nessuna modifica
           next.push([x, y]);
           continue;
         }
 
         let extraLambda = 0;
         if (angleDeg <= thresholdHard) {
-          extraLambda = maxExtraLambda; // molto stretto → max smoothing
+          extraLambda = maxExtraLambda;
         } else {
           const t =
             (thresholdSoft - angleDeg) / (thresholdSoft - thresholdHard);
@@ -389,28 +375,27 @@ export function startEditor(): void {
     return out;
   }
 
-  // Disegna tutti i fill layer ma “gonfiati” verso l’esterno di delta px,
-  // applicando uno smoothing per arrotondare gli spigoli e ridurre sovrapposizioni.
-  function drawOffsetFillAreas(delta: number) {
-    const smallBrush = brushSize <= 32;      // heuristica: stai disegnando cose piccole
+  // Disegna tutte le aree (stroke) “gonfiate” verso l’esterno
+  function drawOffsetStrokeAreas(delta: number) {
+    const smallBrush = brushSize <= 32;
 
-    // per figure piccole aumentiamo ancora lo smoothing
     const iterations = smallBrush ? 3 : 2;
-    const lambda     = smallBrush ? 0.8 : 0.6;
+    const lambda = smallBrush ? 0.8 : 0.6;
 
-    for (const type of FILL_TYPES) {
-      const area = fillLayers[type]?.area;
-      if (!area) continue;
+    const drawAreaOffset = (area: TerrainArea) => {
       const mp = area.geometry;
-      if (!mp || mp.length === 0) continue;
+      if (!mp || mp.length === 0) return;
 
-      const mpOff    = offsetMultiPolygon(mp, delta);
+      const mpOff = offsetMultiPolygon(mp, delta);
       const mpSmooth = smoothMultiPolygon(mpOff, iterations, lambda);
-
       drawMultiPolygon(mpSmooth);
-    }
-  }
+    };
 
+    for (const s of strokeLayers) {
+      drawAreaOffset(s.area);
+    }
+    if (currentStroke) drawAreaOffset(currentStroke.area);
+  }
 
   function drawDebug(preview: MultiPolygon | null = null) {
     debug.clear();
@@ -422,80 +407,65 @@ export function startEditor(): void {
       cap: PIXI.LINE_CAP.ROUND,
     } as const;
 
-    // fattore 0..1 in base alla grandezza del brush
-    // es: size 16 → ~0.25, size 64+ → 1
     const sizeFactor = Math.min(1, brushSize / 64);
 
-    // =====================================================
-    // 1) ALONE BIANCO ADATTIVO (per evitare "macchie" sui piccoli)
-    // =====================================================
+    // 1) alone bianco adattivo
     const glowSteps = 4;
-
-    // brush piccoli → alone più stretto e meno intenso
-    const glowWidthScale = 0.45 + 0.55 * sizeFactor;   // 0.45..1.0
-    const glowAlphaScale = 0.55 + 0.45 * sizeFactor;   // 0.55..1.0
+    const glowWidthScale = 0.45 + 0.55 * sizeFactor;
+    const glowAlphaScale = 0.55 + 0.45 * sizeFactor;
 
     for (let i = 0; i < glowSteps; i++) {
       const t = i / (glowSteps - 1);
 
-      const baseWidth = 24 - i * 4;            // 24, 20, 16, 12
-      const baseAlpha = 0.05 + 0.04 * (1 - t); // interno più intenso
+      const baseWidth = 24 - i * 4;
+      const baseAlpha = 0.05 + 0.04 * (1 - t);
 
       const width = baseWidth * glowWidthScale;
       const alpha = baseAlpha * glowAlphaScale;
 
       debug.lineStyle({
         width,
-        color: 0xf5f1e8,  // bianco caldo
+        color: 0xf5f1e8,
         alpha,
         ...baseStyle,
       });
-      drawAllFillAreas();
+      drawAllStrokeAreas();
     }
 
-    // =====================================================
-    // 2) LINEE DI PROFONDITÀ ADATTIVE
-    //    - per brush piccoli: meno linee, più vicine e più soft
-    // =====================================================
+    // 2) linee di profondità adattive
     const isTinyBrush = brushSize <= 32;
 
     const repeatCount = isTinyBrush ? 3 : 5;
-    const deltaStep   = isTinyBrush ? 3 : 4;
-    const startDelta  = isTinyBrush ? 5 : 8;
+    const deltaStep = isTinyBrush ? 3 : 4;
+    const startDelta = isTinyBrush ? 5 : 8;
 
     for (let i = 0; i < repeatCount; i++) {
       const delta = startDelta + deltaStep * i;
 
-      // alpha che cala verso l’esterno; un po’ più bassa sui pennelli piccoli
       let lineAlpha =
         (isTinyBrush ? 0.35 : 0.45) - i * (isTinyBrush ? 0.05 : 0.06);
-      if (lineAlpha < 0.10) lineAlpha = 0.10;
+      if (lineAlpha < 0.1) lineAlpha = 0.1;
 
       debug.lineStyle({
         width: 1,
-        color: 0x463120,   // marrone più chiaro del bordo
+        color: 0x463120,
         alpha: lineAlpha,
         ...baseStyle,
       });
 
-      // poligono offset + smussato (già gestito in drawOffsetFillAreas)
-      drawOffsetFillAreas(delta);
+      drawOffsetStrokeAreas(delta);
     }
 
-    // =====================================================
-    // 3) BORDO MARRONE PRINCIPALE (invariato)
-    // =====================================================
+    // 3) bordo principale
     debug.lineStyle({
       width: 5,
       color: 0x2b1608,
       alpha: 1,
       ...baseStyle,
     });
-    drawAllFillAreas();
+    drawAllStrokeAreas();
 
-    // =====================================================
-    // 4) PREVIEW DELLA PENNELLATA (invariato)
-    // =====================================================
+    // 4) preview della pennellata
     if (preview && preview.length > 0) {
       debug.lineStyle({
         width: 4,
@@ -507,34 +477,20 @@ export function startEditor(): void {
     }
   }
 
-
-  // helper per creare un brush per una certa area
-  function createBrushForArea(area: TerrainArea): BrushEngine {
+  // ------------------------------------------------------
+  // helper per creare un brush per una certa AREA (stroke)
+  // ------------------------------------------------------
+  function createBrushForStroke(area: TerrainArea): BrushEngine {
     return new BrushEngine({
       area,
       scale: brushScale,
       rotRange: [0, Math.PI * 2] as [number, number],
       accumulatePerStroke: true,
       useCapsule: false,
-      // 🔹 ora usa anche la roughness corrente
       spacing: spacingFromSize(brushSize, currentRoughness),
       spacingJitter: 0.22,
       onChange: () => {
-        const layer = activeLayer();
-        const preview = layer.brush.getPreview();
-
-        if (!preview || preview.length === 0) {
-          // nascondi l’anteprima del fill
-          layer.previewBg.container.visible = false;
-          scheduleDrawDebug(null);
-          return;
-        }
-
-        // 🔹 mostra il fill di anteprima
-        layer.previewMesh.update(preview);
-        layer.previewBg.container.visible = true;
-
-        // manteniamo anche l’anteprima del bordo nel debug
+        const preview = currentStroke?.brush.getPreview() || null;
         scheduleDrawDebug(preview);
       },
       onDebug: (info: any) => {
@@ -543,23 +499,25 @@ export function startEditor(): void {
     });
   }
 
-  // layer di fill attivo
-  let currentFillType: FillType = "grass";
-  const activeLayer = (): FillLayer => fillLayers[currentFillType];
-
-  // --- UI: selettore layer di sfondo (base) ---
+  // ------------------------------------------------------
+  // UI: selettore layer di sfondo (base)
+  // ------------------------------------------------------
   new LayerSelector((type) => {
     mountBaseBackground(type);
   });
 
-  // --- UI: BrushSelector (select in alto a destra) ---
+  // ------------------------------------------------------
+  // UI: BrushSelector (select in alto a destra)
+  // ------------------------------------------------------
   new BrushSelector((size) => {
     brushSize = size;
     brushScale = brushSize / 64;
-    for (const t of FILL_TYPES) {
-      const b = fillLayers[t].brush;
-      b.setScale(brushScale);
-      b.setSpacing(spacingFromSize(brushSize, currentRoughness));
+
+    if (currentStroke) {
+      currentStroke.brush.setScale(brushScale);
+      currentStroke.brush.setSpacing(
+        spacingFromSize(brushSize, currentRoughness)
+      );
     }
   });
 
@@ -578,7 +536,7 @@ export function startEditor(): void {
   roughnessInput.style.zIndex = "9999";
   document.body.appendChild(roughnessInput);
 
-  // --- SLIDER BRUSH SIZE ---
+  // --- SLIDER BRUSH SIZE (in basso) ---
   const sizeInput = document.createElement("input");
   sizeInput.type = "range";
   sizeInput.min = "16";
@@ -596,10 +554,12 @@ export function startEditor(): void {
   sizeInput.addEventListener("input", () => {
     brushSize = parseInt(sizeInput.value, 10);
     brushScale = brushSize / 64;
-    for (const t of FILL_TYPES) {
-      const b = fillLayers[t].brush;
-      b.setScale(brushScale);
-      b.setSpacing(spacingFromSize(brushSize, currentRoughness));
+
+    if (currentStroke) {
+      currentStroke.brush.setScale(brushScale);
+      currentStroke.brush.setSpacing(
+        spacingFromSize(brushSize, currentRoughness)
+      );
     }
   });
 
@@ -673,18 +633,18 @@ export function startEditor(): void {
     const newPoly = getRoughnessPolygon(level);
     setStamps([newPoly]);
 
-    // quando cambia la roughness, ri–tariamo anche la spaziatura del brush
-    for (const t of FILL_TYPES) {
-      const b = fillLayers[t].brush;
-      b.setSpacing(spacingFromSize(brushSize, currentRoughness));
+    if (currentStroke) {
+      currentStroke.brush.setSpacing(
+        spacingFromSize(brushSize, currentRoughness)
+      );
     }
 
-    const preview = activeLayer().brush.getPreview();
+    const preview = currentStroke?.brush.getPreview() || null;
     if (preview) scheduleDrawDebug(preview);
+    else scheduleDrawDebug(null);
   });
 
-
-  // --- POINTER ---
+  // --- POINTER UTIL ---
   function worldFromEvent(e: PointerEvent): Vec2 {
     const rect = canvas.getBoundingClientRect();
     const x = (e.clientX - rect.left - editor.world.x) / editor.world.scale.x;
@@ -692,12 +652,46 @@ export function startEditor(): void {
     return [x, y];
   }
 
-    function strokeMove(pos: Vec2) {
-    const layer = activeLayer();
+  // crea una nuova pennellata (stroke) e il relativo layer
+  function beginStroke(pos: Vec2) {
+    const type = currentFillType;
+
+    const area = new TerrainArea();
+    const mesh = new TerrainMesh(editor.app, 1.25);
+
+    // sprite che usa la RenderTexture del terreno selezionato
+    const sprite = new PIXI.Sprite(terrainTextures[type]);
+    sprite.x = 0;
+    sprite.y = 0;
+    // se serve, puoi regolare anchor/position in base al tuo mondo
+    // sprite.anchor.set(0.5);
+
+    sprite.mask = mesh.mask;
+
+    // ordine: baseBg sotto, poi tutte le stroke, poi debug sopra
+    editor.world.addChild(sprite);
+    editor.world.addChild(mesh.container);
+    editor.world.addChild(debug); // rimetti il debug in cima
+
+    const brush = createBrushForStroke(area);
+
+    currentStroke = {
+      type,
+      area,
+      mesh,
+      sprite,
+      brush,
+    };
+
+    brush.pointerDown(pos);
+  }
+
+  function strokeMove(pos: Vec2) {
+    if (!currentStroke) return;
 
     if (!lastPaintPos) {
       lastPaintPos = pos;
-      layer.brush.pointerMove(pos);
+      currentStroke.brush.pointerMove(pos);
       return;
     }
 
@@ -706,11 +700,10 @@ export function startEditor(): void {
     const dy = pos[1] - ly;
     const dist = Math.hypot(dx, dy);
 
-    // distanza massima tra due campioni del mouse prima di “spezzare” il segmento
     const maxStep = Math.max(4, brushSize * 0.35);
 
     if (dist <= maxStep) {
-      layer.brush.pointerMove(pos);
+      currentStroke.brush.pointerMove(pos);
       lastPaintPos = pos;
       return;
     }
@@ -720,36 +713,42 @@ export function startEditor(): void {
       const t = i / steps;
       const x = lx + dx * t;
       const y = ly + dy * t;
-      layer.brush.pointerMove([x, y]);
+      currentStroke.brush.pointerMove([x, y]);
     }
     lastPaintPos = pos;
   }
 
+  function endStroke() {
+    if (!currentStroke) return;
 
+    currentStroke.brush.pointerUp();
+    currentStroke.mesh.update(currentStroke.area.geometry);
+
+    strokeLayers.push(currentStroke);
+    currentStroke = null;
+    lastPaintPos = null;
+
+    scheduleDrawDebug(null);
+  }
+
+  // --- EVENTI POINTER ---
   canvas.addEventListener("pointerdown", (e) => {
     if (controls.isPanActive) return;
     const p = worldFromEvent(e);
     lastPaintPos = p;
-    activeLayer().brush.pointerDown(p);
+    beginStroke(p);
   });
 
   canvas.addEventListener("pointermove", (e) => {
     if (controls.isPanActive) return;
+    if (!currentStroke) return;
     const p = worldFromEvent(e);
     strokeMove(p);
   });
 
   window.addEventListener("pointerup", () => {
     if (controls.isPanActive) return;
-    const layer = activeLayer();
-
-    layer.brush.pointerUp();
-    layer.mesh.update(layer.area.geometry); // commit del fill definitivo
-
-    // 🔹 nascondi l’anteprima del fill
-    layer.previewBg.container.visible = false;
-
-    scheduleDrawDebug(null);
+    endStroke();
   });
 
   // --- ZOOM ---
@@ -763,8 +762,5 @@ export function startEditor(): void {
   });
 
   // --- INIT ---
-  for (const t of FILL_TYPES) {
-    fillLayers[t].mesh.update(fillLayers[t].area.geometry);
-  }
   drawDebug();
 }
