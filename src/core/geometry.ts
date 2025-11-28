@@ -132,6 +132,44 @@ export const PolygonClippingGeometryEngine: GeometryEngine = {
   },
 };
 
+// ------------------------------------------------------------
+// OFFSET POLIGONO (semplificato)
+// ------------------------------------------------------------
+export function buildOffsetPolygon(
+  points: Point2D[],
+  offset: number
+): MultiPolygon {
+
+  if (!points || points.length < 3) return [];
+
+  // algoritmo naive: sposta ogni punto radialmente dall'origine del poligono
+  let cx = 0, cy = 0;
+  for (const p of points) {
+    cx += p.x;
+    cy += p.y;
+  }
+  cx /= points.length;
+  cy /= points.length;
+
+  const ring = points.map((p) => {
+    const dx = p.x - cx;
+    const dy = p.y - cy;
+    const len = Math.sqrt(dx * dx + dy * dy) || 1;
+
+    return {
+      x: p.x + (dx / len) * offset,
+      y: p.y + (dy / len) * offset
+    };
+  });
+
+  return [
+    {
+      outer: ring
+    }
+  ];
+}
+
+
 /**
  * Vecchio engine “finto” — se ti serve altrove puoi lasciarlo,
  * ma per la shovel NON lo usiamo.

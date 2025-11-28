@@ -67,26 +67,30 @@ export class BrushStrokeController {
     this.renderer.appendShovelStroke(newStamps);
   }
 
-  private handleMouseUp(_e: MouseEvent): void {
+private handleMouseUp(_e: MouseEvent): void {
     if (!this.isDrawing) return;
 
     this.isDrawing = false;
 
     if (this.editorState.activeTool !== TOOL_ID.Shovel) return;
 
-    // unione finale dello stroke
+    // unione finale
     this.shovelTool.endStroke(this.editorState);
 
     // pulizia preview
     this.renderer.clearShovelStroke();
 
-    // shape unificata
+    // shape finale consolidata
     const finalShape = this.editorState.world.shovel.shape;
 
-    // fill + bordo dalla shape consolidata
+    // 🔥 IMPORTANTISSIMO: disegna effetti
+    this.renderer.renderShovelEffects(finalShape);
+
+    // fill + bordi
     this.renderer.renderShovelBase(finalShape);
     this.renderer.renderShovelBorder(finalShape);
-  }
+}
+
 
   private screenToWorld(clientX: number, clientY: number): Point2D {
     const rect = this.domElement.getBoundingClientRect();
