@@ -1,7 +1,9 @@
+// src/input/brushStrokeController.ts
+
 import type { EditorState } from '../core/state';
 import type { EditorRenderer } from '../rendering/renderer';
 import type { ShovelTool } from '../core/tools/shovelTool';
-import { TOOL_ID } from '../core/state';
+import { TOOL_ID, PAINT_MODE } from '../core/state';
 import type { Point2D } from '../core/types';
 
 export class BrushStrokeController {
@@ -42,55 +44,97 @@ export class BrushStrokeController {
 
   private handleMouseDown(e: MouseEvent): void {
     if (e.button !== 0) return;
-    if (this.editorState.activeTool !== TOOL_ID.Shovel) return;
 
     const worldPos = this.screenToWorld(e.clientX, e.clientY);
     this.isDrawing = true;
 
-    const firstStrokeShape = this.shovelTool.beginStroke(
-      this.editorState,
-      worldPos,
-    );
+    // --------------------------------------------------
+    // SHOVEL
+    // --------------------------------------------------
+    if (this.editorState.activeTool === TOOL_ID.Shovel) {
+      const firstStrokeShape = this.shovelTool.beginStroke(
+        this.editorState,
+        worldPos,
+      );
 
-    // reset layer stroke e disegna i primi timbri (preview)
-    this.renderer.renderShovelStrokeInitial(firstStrokeShape);
+      // reset layer stroke e disegna i primi timbri (preview)
+      this.renderer.renderShovelStrokeInitial(firstStrokeShape);
+      return;
+    }
+
+    // --------------------------------------------------
+    // PAINT (per ora solo Background → disegniamo un dot nella mask BG)
+    // --------------------------------------------------
+    if (this.editorState.activeTool === TOOL_ID.Paint) {
+      if (this.editorState.activePaintMode === PAINT_MODE.Background) {
+        const radius = this.editorState.brush.size / 2;
+        this.renderer.paintBackgroundDot(worldPos.x, worldPos.y, radius);
+      }
+      // Foreground / Top li gestiremo dopo
+      return;
+    }
   }
 
   private handleMouseMove(e: MouseEvent): void {
     if (!this.isDrawing) return;
-    if (this.editorState.activeTool !== TOOL_ID.Shovel) return;
 
     const worldPos = this.screenToWorld(e.clientX, e.clientY);
-    const newStamps = this.shovelTool.moveStroke(this.editorState, worldPos);
 
-    // aggiungi i nuovi stamp al layer stroke
-    this.renderer.appendShovelStroke(newStamps);
+    // --------------------------------------------------
+    // SHOVEL
+    // --------------------------------------------------
+    if (this.editorState.activeTool === TOOL_ID.Shovel) {
+      const newStamps = this.shovelTool.moveStroke(this.editorState, worldPos);
+
+      // aggiungi i nuovi stamp al layer stroke
+      this.renderer.appendShovelStroke(newStamps);
+      return;
+    }
+
+    // --------------------------------------------------
+    // PAINT (Background)
+    // --------------------------------------------------
+    if (this.editorState.activeTool === TOOL_ID.Paint) {
+      if (this.editorState.activePaintMode === PAINT_MODE.Background) {
+        const radius = this.editorState.brush.size / 2;
+        this.renderer.paintBackgroundDot(worldPos.x, worldPos.y, radius);
+      }
+      return;
+    }
   }
 
-private handleMouseUp(_e: MouseEvent): void {
+  private handleMouseUp(_e: MouseEvent): void {
     if (!this.isDrawing) return;
-
     this.isDrawing = false;
 
-    if (this.editorState.activeTool !== TOOL_ID.Shovel) return;
+    // --------------------------------------------------
+    // SHOVEL: unione finale + redraw
+    // --------------------------------------------------
+    if (this.editorState.activeTool === TOOL_ID.Shovel) {
+      // unione finale
+      this.shovelTool.endStroke(this.editorState);
 
-    // unione finale
-    this.shovelTool.endStroke(this.editorState);
+      // pulizia preview
+      this.renderer.clearShovelStroke();
 
-    // pulizia preview
-    this.renderer.clearShovelStroke();
+      // shape finale consolidata
+      const finalShape = this.editorState.world.shovel.shape;
 
-    // shape finale consolidata
-    const finalShape = this.editorState.world.shovel.shape;
+      // 🔥 effetti + fill + bordi
+      this.renderer.renderShovelEffects(finalShape);
+      this.renderer.renderShovelBase(finalShape);
+      this.renderer.renderShovelBorder(finalShape);
+      return;
+    }
 
-    // 🔥 IMPORTANTISSIMO: disegna effetti
-    this.renderer.renderShovelEffects(finalShape);
-
-    // fill + bordi
-    this.renderer.renderShovelBase(finalShape);
-    this.renderer.renderShovelBorder(finalShape);
-}
-
+    // --------------------------------------------------
+    // PAINT: per ora niente commit logico,
+    // la mask BG è già stata aggiornata in tempo reale
+    // --------------------------------------------------
+    if (this.editorState.activeTool === TOOL_ID.Paint) {
+      return;
+    }
+  }
 
   private screenToWorld(clientX: number, clientY: number): Point2D {
     const rect = this.domElement.getBoundingClientRect();

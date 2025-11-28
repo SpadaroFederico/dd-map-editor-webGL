@@ -1,4 +1,6 @@
-import { createInitialEditorState } from './core/state';
+// src/main.ts
+
+import { createInitialEditorState, TOOL_ID } from './core/state';
 import { EditorRenderer } from './rendering/renderer';
 import { CameraController } from './input/cameraController';
 import { StampBrushEngine } from './core/brush';
@@ -27,8 +29,45 @@ async function main(): Promise<void> {
   info.style.color = 'white';
   info.style.fontFamily = 'sans-serif';
   info.textContent =
-    '2D Map Editor – background dirt + shovel (fill marrone) – pan/zoom: destro/centrale, shovel: sinistro';
+    '2D Map Editor – dirt + shovel – pan/zoom: destro/centrale, sinistro: tool attivo (Shovel/Paint)';
   root.appendChild(info);
+
+  // 🔘 Bottone temporaneo per switch Shovel / Paint
+  const toggleBtn = document.createElement('button');
+  toggleBtn.style.position = 'fixed';
+  toggleBtn.style.top = '32px';
+  toggleBtn.style.left = '8px';
+  toggleBtn.style.zIndex = '11';
+  toggleBtn.style.padding = '4px 8px';
+  toggleBtn.style.fontFamily = 'sans-serif';
+  toggleBtn.style.fontSize = '12px';
+  toggleBtn.style.cursor = 'pointer';
+
+  function updateToggleLabel() {
+    if (editorState.activeTool === TOOL_ID.Paint) {
+      toggleBtn.textContent = 'Tool: Paint (BG)';
+    } else {
+      toggleBtn.textContent = 'Tool: Shovel';
+    }
+  }
+
+  // giusto per sicurezza, anche se createInitialEditorState lo setta già a Shovel
+  if (!editorState.activeTool) {
+    editorState.activeTool = TOOL_ID.Shovel;
+  }
+  updateToggleLabel();
+
+  toggleBtn.addEventListener('click', () => {
+    editorState.activeTool =
+      editorState.activeTool === TOOL_ID.Shovel
+        ? TOOL_ID.Paint
+        : TOOL_ID.Shovel;
+
+    updateToggleLabel();
+    console.log('Tool attivo:', editorState.activeTool);
+  });
+
+  root.appendChild(toggleBtn);
 
   const canvas = document.createElement('canvas');
   canvas.style.width = '100%';

@@ -1,12 +1,80 @@
 // src/rendering/renderer.ts
 
 import * as PIXI from "pixi.js";
-import type { EditorState } from "../core/state";
-import type { TilePatternConfig, MultiPolygon, Point2D } from "../core/types";
+import type {
+  EditorState
+} from "../core/state";
+import type {
+  TilePatternConfig,
+  MultiPolygon,
+  Point2D,
+  MaterialId,
+} from "../core/types";
 import type { ShovelTool } from "../core/tools/shovelTool";
 
 import { BlurFilter } from "pixi.js";
 import { createTilePatternLayer, type TilePatternLayer } from "./tilePatterns";
+
+// Mappa: materiale → lista di file delle tiles da caricare
+// ⚠️ Metti qui i NOMI REALI dei tuoi file per grass / water
+const MATERIAL_TILE_FILES: Record<string, string[]> = {
+  dirt: [
+    '/tiles/dirt/dirt_stylized_rock_1.png',
+    '/tiles/dirt/dirt_stylized_rock_2.png',
+    '/tiles/dirt/dirt_stylized_rock_3.png',
+    '/tiles/dirt/dirt_stylized_rock_4.png',
+    '/tiles/dirt/dirt_stylized_rock_5.png',
+    '/tiles/dirt/dirt_stylized_rock_6.png',
+    '/tiles/dirt/dirt_stylized_rock_7.png',
+    '/tiles/dirt/dirt_stylized_rock_8.png',
+    '/tiles/dirt/dirt_stylized_rock_9.png',
+    '/tiles/dirt/dirt_stylized_rock_10.png',
+    '/tiles/dirt/dirt_stylized_rock_11.png',
+    '/tiles/dirt/dirt_stylized_rock_12.png',
+    '/tiles/dirt/dirt_stylized_rock_13.png',
+    '/tiles/dirt/dirt_stylized_rock_14.png',
+    '/tiles/dirt/dirt_stylized_rock_15.png',
+  ],
+
+  // 👇 Sostituisci i nomi con quelli reali che hai in /tiles/grass
+  grass: [
+    '/tiles/grass/grass_1.png',
+    '/tiles/grass/grass_2.png',
+    '/tiles/grass/grass_3.png',
+    '/tiles/grass/grass_4.png',
+    '/tiles/grass/grass_5.png',
+    '/tiles/grass/grass_6.png',
+    '/tiles/grass/grass_7.png',
+    '/tiles/grass/grass_8.png',
+    '/tiles/grass/grass_9.png',
+    '/tiles/grass/grass_10.png',
+    '/tiles/grass/grass_11.png',
+    '/tiles/grass/grass_12.png',
+    '/tiles/grass/grass_13.png',
+    '/tiles/grass/grass_14.png',
+    '/tiles/grass/grass_15.png',
+  ],
+
+  // 👇 Sostituisci i nomi con quelli reali che hai in /tiles/water
+  water: [
+    '/tiles/water/water_1.png',
+    '/tiles/water/water_2.png',
+    '/tiles/water/water_3.png',
+    '/tiles/water/water_4.png',
+    '/tiles/water/water_5.png',
+    '/tiles/water/water_6.png',
+    '/tiles/water/water_7.png',
+    '/tiles/water/water_8.png',
+    '/tiles/water/water_9.png',
+    '/tiles/water/water_10.png',
+    '/tiles/water/water_11.png',
+    '/tiles/water/water_12.png',
+    '/tiles/water/water_13.png',
+    '/tiles/water/water_14.png',
+    '/tiles/water/water_15.png',
+  ],
+};
+
 
 interface EditorRendererOptions {
   canvas?: HTMLCanvasElement;
@@ -21,117 +89,147 @@ export class EditorRenderer {
   private editorState: EditorState;
   private shovelTool: ShovelTool;
   private dirtPattern: TilePatternLayer;
+
+  // tutte le texture per materiale
+  private materialTextures: Record<string, PIXI.Texture[]> = {};
+
+  // comodo alias per il terreno base
   private dirtTextures: PIXI.Texture[] = [];
+
   private isInitialized = false;
+
 
   private tilesPerSide = 60;
   private mapWidth = 0;
   private mapHeight = 0;
 
-  // MASK
+  // MASK SHOVEL
   private shovelMaskContainer: PIXI.Container;
   private shovelBaseMaskGraphics: PIXI.Graphics;
   private shovelStrokeMaskGraphics: PIXI.Graphics;
 
+  // PAINT BACKGROUND (bg): tiles + mask
+  private bgPaintContainer: PIXI.Container;  // layer di tiles BG
+  private bgPaintMask: PIXI.Graphics;        // mask del paint BG
+
   // GLOW (alone bianco)
   private shovelGlowGraphics: PIXI.Graphics;
 
-  // INNER SHADOW (bordo scuro interno)
+  // INNER SHADOW (bordo interno)
   private shovelInnerShadowGraphics: PIXI.Graphics;
 
   // BORDO FINALE + bordi sottili offsettati
   private shovelBorderGraphics: PIXI.Graphics;
 
-  constructor(
-    editorState: EditorState,
-    shovelTool: ShovelTool,
-    options?: EditorRendererOptions,
-  ) {
-    this.editorState = editorState;
-    this.shovelTool = shovelTool;
+constructor(
+  editorState: EditorState,
+  shovelTool: ShovelTool,
+  options?: EditorRendererOptions,
+) {
+  this.editorState = editorState;
+  this.shovelTool = shovelTool;
 
-    this.app = new PIXI.Application({
-      view: options?.canvas,
-      resizeTo: window,
-      antialias: true,
-      background: 0x20252b,
-    });
+  this.app = new PIXI.Application({
+    view: options?.canvas,
+    resizeTo: window,
+    antialias: true,
+    background: 0x20252b,
+  });
 
-    // Root del mondo
-    this.worldContainer = new PIXI.Container();
-    this.app.stage.addChild(this.worldContainer);
+  // Root del mondo
+  this.worldContainer = new PIXI.Container();
+  this.app.stage.addChild(this.worldContainer);
 
-    // Background
-    this.backgroundTilesContainer = new PIXI.Container();
-    this.worldContainer.addChild(this.backgroundTilesContainer);
+  // 1) SFONDO BASE
+  this.backgroundTilesContainer = new PIXI.Container();
+  this.worldContainer.addChild(this.backgroundTilesContainer);
 
-    // GLOW: graphics con blur (RESTO INVARIATO)
-    this.shovelGlowGraphics = new PIXI.Graphics();
-    this.shovelGlowGraphics.alpha = 0.4;
-    this.shovelGlowGraphics.filters = [new BlurFilter(50)];
-    this.worldContainer.addChild(this.shovelGlowGraphics);
+  // 2) MASK BG (sotto al paint, così i cerchi bianchi sono coperti)
+  this.bgPaintMask = new PIXI.Graphics();
+  this.bgPaintMask.alpha = 1;          // alpha piena → mask efficace
+  this.worldContainer.addChild(this.bgPaintMask);
 
-    // Pattern interno della shovel (terra scura)
-    this.shovelFillContainer = new PIXI.Container();
-    this.worldContainer.addChild(this.shovelFillContainer);
+  // 3) PAINT BG (sopra la mask, sotto la shovel)
+  this.bgPaintContainer = new PIXI.Container();
+  this.bgPaintContainer.visible = false;  // parte nascosto
+  this.worldContainer.addChild(this.bgPaintContainer);
 
-    // INNER SHADOW: sopra il fill, sotto il bordo
-    this.shovelInnerShadowGraphics = new PIXI.Graphics();
-    this.shovelInnerShadowGraphics.alpha = 0.7;
-    this.shovelInnerShadowGraphics.filters = [new BlurFilter(12)];
-    this.worldContainer.addChild(this.shovelInnerShadowGraphics);
+  // collega la mask al layer di paint
+  this.bgPaintContainer.mask = this.bgPaintMask;
 
-    // Mask base + stroke (preview)
-    this.shovelMaskContainer = new PIXI.Container();
-    this.shovelBaseMaskGraphics = new PIXI.Graphics();
-    this.shovelStrokeMaskGraphics = new PIXI.Graphics();
+  // 4) GLOW SHOVEL (sotto il fill)
+  this.shovelGlowGraphics = new PIXI.Graphics();
+  this.shovelGlowGraphics.alpha = 0.4;
+  this.shovelGlowGraphics.filters = [new BlurFilter(50)];
+  this.worldContainer.addChild(this.shovelGlowGraphics);
 
-    this.shovelMaskContainer.addChild(this.shovelBaseMaskGraphics);
-    this.shovelMaskContainer.addChild(this.shovelStrokeMaskGraphics);
+  // 5) SHOVEL FILL
+  this.shovelFillContainer = new PIXI.Container();
+  this.worldContainer.addChild(this.shovelFillContainer);
 
-    this.worldContainer.addChild(this.shovelMaskContainer);
-    this.shovelFillContainer.mask = this.shovelMaskContainer;
+  // 6) INNER SHADOW
+  this.shovelInnerShadowGraphics = new PIXI.Graphics();
+  this.shovelInnerShadowGraphics.alpha = 0.7;
+  this.shovelInnerShadowGraphics.filters = [new BlurFilter(12)];
+  this.worldContainer.addChild(this.shovelInnerShadowGraphics);
 
-    // Bordo finale marrone scuro + sottili
-    this.shovelBorderGraphics = new PIXI.Graphics();
-    this.worldContainer.addChild(this.shovelBorderGraphics);
+  // 7) MASK SHOVEL
+  this.shovelMaskContainer = new PIXI.Container();
+  this.shovelBaseMaskGraphics = new PIXI.Graphics();
+  this.shovelStrokeMaskGraphics = new PIXI.Graphics();
 
-    // Tile pattern terreno
-    const dirtConfig: TilePatternConfig = {
-      materialId: "dirt",
-      tileSize: 337,
-      variants: [
-        "dirt_1",
-        "dirt_2",
-        "dirt_3",
-        "dirt_4",
-        "dirt_5",
-        "dirt_6",
-        "dirt_7",
-        "dirt_8",
-        "dirt_9",
-        "dirt_10",
-        "dirt_11",
-        "dirt_12",
-        "dirt_13",
-        "dirt_14",
-        "dirt_15",
-      ],
-      seed: 12345,
-    };
+  this.shovelMaskContainer.addChild(this.shovelBaseMaskGraphics);
+  this.shovelMaskContainer.addChild(this.shovelStrokeMaskGraphics);
 
-    this.dirtPattern = createTilePatternLayer(dirtConfig);
-    this.computeMapSize();
-    this.updateCamera();
-  }
+  this.worldContainer.addChild(this.shovelMaskContainer);
+  this.shovelFillContainer.mask = this.shovelMaskContainer;
+
+  // 8) BORDO SHOVEL
+  this.shovelBorderGraphics = new PIXI.Graphics();
+  this.worldContainer.addChild(this.shovelBorderGraphics);
+
+  // Tile pattern terreno (dirt)
+  const dirtConfig: TilePatternConfig = {
+    materialId: "dirt",
+    tileSize: 337,
+    variants: [
+      "dirt_1",
+      "dirt_2",
+      "dirt_3",
+      "dirt_4",
+      "dirt_5",
+      "dirt_6",
+      "dirt_7",
+      "dirt_8",
+      "dirt_9",
+      "dirt_10",
+      "dirt_11",
+      "dirt_12",
+      "dirt_13",
+      "dirt_14",
+      "dirt_15",
+    ],
+    seed: 12345,
+  };
+
+  this.dirtPattern = createTilePatternLayer(dirtConfig);
+  this.computeMapSize();
+  this.updateCamera();
+}
+
+
+
 
   // ---------------------------------------------------------
   // INIT
   // ---------------------------------------------------------
   async init(): Promise<void> {
-    await this.loadDirtTextures();
+    await this.loadMaterialTextures();
     this.drawBackgroundFromPattern();
     this.drawShovelPatternFromPattern();
+
+    // tiles per il paint BG (una sola volta)
+    this.buildBackgroundPaintLayer(this.editorState.activeMaterial);
 
     const shape = this.editorState.world.shovel.shape;
 
@@ -180,13 +278,28 @@ export class EditorRenderer {
   // ---------------------------------------------------------
   // LOAD TEXTURES
   // ---------------------------------------------------------
-  private async loadDirtTextures(): Promise<void> {
-    const loads: Promise<PIXI.Texture>[] = [];
-    for (let i = 1; i <= 15; i++) {
-      loads.push(PIXI.Assets.load(`/tiles/dirt/dirt_stylized_rock_${i}.png`));
+  // carica tutte le tiles di tutti i materiali definiti in MATERIAL_TILE_FILES
+  private async loadMaterialTextures(): Promise<void> {
+    const loadPromises: Promise<void>[] = [];
+
+    for (const [materialId, files] of Object.entries(MATERIAL_TILE_FILES)) {
+      const texPromises: Promise<PIXI.Texture>[] = files.map((filePath) =>
+        PIXI.Assets.load(filePath),
+      );
+
+      const p = Promise.all(texPromises).then((textures) => {
+        this.materialTextures[materialId] = textures;
+      });
+
+      loadPromises.push(p);
     }
-    this.dirtTextures = await Promise.all(loads);
+
+    await Promise.all(loadPromises);
+
+    // alias comodo per il terreno base
+    this.dirtTextures = this.materialTextures['dirt'] ?? [];
   }
+
 
   // ---------------------------------------------------------
   // BACKGROUND + SHOVEL PATTERN
@@ -248,7 +361,7 @@ export class EditorRenderer {
           s.y = y;
           s.width = t;
           s.height = t;
-          s.tint = 0xaa7744; // terra scavata
+          s.tint = 0xaa7744; // terra scavata (shovel)
           this.shovelFillContainer.addChild(s);
         } else {
           const g = new PIXI.Graphics();
@@ -260,6 +373,53 @@ export class EditorRenderer {
       }
     }
   }
+
+  // ---------------------------------------------------------
+  // COSTRUZIONE TILES PER PAINT BG (UNA VOLTA SOLA)
+  // ---------------------------------------------------------
+    private getMaterialTint(materialId: MaterialId): number {
+    return 0xff0000; // DEBUG: rosso forte, giusto per vedere il paint
+    }
+
+
+  private buildBackgroundPaintLayer(materialId: MaterialId): void {
+    this.bgPaintContainer.removeChildren();
+
+    // scegliamo le texture per il materiale richiesto;
+    // se non trovate, fallback a dirt
+    const textures =
+      this.materialTextures[materialId] ?? this.materialTextures['dirt'] ?? [];
+
+    const n = textures.length;
+    if (n === 0) return;
+
+    const t = this.dirtPattern.config.tileSize;
+    const half = this.tilesPerSide / 2;
+
+    for (let i = 0; i < this.tilesPerSide; i++) {
+      for (let j = 0; j < this.tilesPerSide; j++) {
+        const x = (i - half) * t;
+        const y = (j - half) * t;
+
+        // usiamo SEMPRE lo stesso pattern logico (dirtPattern)
+        const idx = this.dirtPattern.getVariantIndex(i, j);
+        const tex = textures[idx % n];
+
+        const sprite = new PIXI.Sprite(tex);
+        sprite.x = x;
+        sprite.y = y;
+        sprite.width = t;
+        sprite.height = t;
+
+        // niente tint: usiamo la tile così com’è
+        this.bgPaintContainer.addChild(sprite);
+      }
+    }
+
+    // all'inizio la mask è vuota → niente BG visibile
+    this.bgPaintContainer.visible = false;
+  }
+
 
   // ---------------------------------------------------------
   // MULTIPOLYGON DRAWING
@@ -289,7 +449,7 @@ export class EditorRenderer {
   }
 
   // ---------------------------------------------------------
-  // MASK BASE
+  // MASK BASE SHOVEL
   // ---------------------------------------------------------
   renderShovelBase(shape: MultiPolygon): void {
     this.shovelBaseMaskGraphics.clear();
@@ -301,7 +461,7 @@ export class EditorRenderer {
   }
 
   // ---------------------------------------------------------
-  // PREVIEW STROKE
+  // PREVIEW STROKE SHOVEL
   // ---------------------------------------------------------
   renderShovelStrokeInitial(shape: MultiPolygon | null): void {
     this.shovelStrokeMaskGraphics.clear();
@@ -341,10 +501,51 @@ export class EditorRenderer {
   }
 
   // ---------------------------------------------------------
+  // PAINT BG API (usa tiles + mask, NON colore)
+  // ---------------------------------------------------------
+  renderBackgroundPaint(
+    shape: MultiPolygon | null,
+    _color: number = 0xffffff, // ignorati, ma lasciati per compatibilità
+    _alpha: number = 1.0,
+  ): void {
+    this.bgPaintMask.clear();
+
+    if (!shape || !shape.length) {
+      this.bgPaintContainer.visible = false;
+      return;
+    }
+
+    this.bgPaintContainer.visible = true;
+
+    this.bgPaintMask.beginFill(0xffffff, 1);
+    this.drawMultiPolygon(this.bgPaintMask, shape);
+    this.bgPaintMask.endFill();
+  }
+
+  /**
+   * Disegna un "dot" di paint BG nella mask.
+   * Usato dal BrushStrokeController (TOOL_ID.Paint + mode Background).
+   */
+    paintBackgroundDot(
+    x: number,
+    y: number,
+    radius: number,
+    _color: number = 0xffffff,
+    _alpha: number = 1.0,
+    ): void {
+    console.log('PAINT DOT', { x, y, radius });
+
+    this.bgPaintContainer.visible = true;
+
+    this.bgPaintMask.beginFill(0xffffff, 1);
+    this.bgPaintMask.drawCircle(x, y, radius);
+    this.bgPaintMask.endFill();
+    }
+
+
+  // ---------------------------------------------------------
   // UTILITY PER OFFSET BORDI SOTTILI
   // ---------------------------------------------------------
-
-  // area firmata: >0 = CCW, <0 = CW
   private computeSignedArea(ring: Point2D[]): number {
     let area = 0;
     const n = ring.length;
@@ -375,6 +576,7 @@ export class EditorRenderer {
       const prev = ring[(i - 1 + n) % n];
       const curr = ring[i];
       const next = ring[(i + 1) % n];
+
 
       // edge prev->curr
       let dx1 = curr.x - prev.x;
@@ -441,9 +643,9 @@ export class EditorRenderer {
 
     const g = this.shovelInnerShadowGraphics;
 
-    const steps = 4;        // quante “fasce” di ombra verso l’interno
-    const maxInset = 14;    // quanto entra l’ombra dentro al cratere
-    const baseInset = 4;    // distanza dal bordo scuro
+    const steps = 4;
+    const maxInset = 14;
+    const baseInset = 4;
 
     const color = 0x000000;
     const lineWidth = 6;
@@ -455,7 +657,7 @@ export class EditorRenderer {
       for (let i = 0; i < steps; i++) {
         const t = i / steps;
         const offset = -(baseInset + t * maxInset); // NEGATIVO = verso l’interno
-        const alpha = 0.22 * (1 - t);               // più scuro vicino al bordo
+        const alpha = 0.22 * (1 - t);
 
         this.drawOffsetRing(g, outer, offset, color, alpha, lineWidth);
       }
@@ -469,12 +671,12 @@ export class EditorRenderer {
     this.shovelBorderGraphics.clear();
     if (!shape || shape.length === 0) return;
 
-    // prima disegniamo l’inner shadow, poi il bordo sopra
+    // prima inner shadow, poi bordo
     this.renderShovelInnerShadow(shape);
 
     const g = this.shovelBorderGraphics;
 
-    // bordo principale spesso (come prima)
+    // bordo principale spesso
     const borderWidth = 12;
     const borderColor = 0x2a1d0f;
 
@@ -503,9 +705,9 @@ export class EditorRenderer {
     // --- BORDI SOTTILI OFFSETTATI VERSO L'ESTERNO ---
     const thinColor = 0x000000;
     const thinWidth = 3;
-    const ringCount = 5;           // pochi bordi
-    const baseOffset = borderWidth * 1.8; // distanza dal bordo spesso
-    const deltaOffset = 12;        // distacco fra i bordi sottili
+    const ringCount = 5;
+    const baseOffset = borderWidth * 1.8;
+    const deltaOffset = 12;
 
     for (const poly of shape) {
       const outer = poly.outer;
@@ -513,7 +715,7 @@ export class EditorRenderer {
 
       for (let i = 0; i < ringCount; i++) {
         const off = baseOffset + deltaOffset * i;
-        const alpha = 0.2 * (1 - i / ringCount); // sempre più trasparenti
+        const alpha = 0.2 * (1 - i / ringCount);
         this.drawOffsetRing(g, outer, off, thinColor, alpha, thinWidth);
       }
     }
