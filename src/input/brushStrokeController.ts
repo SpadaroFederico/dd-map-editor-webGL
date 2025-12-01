@@ -1,10 +1,10 @@
 // src/input/brushStrokeController.ts
 
-import type { EditorState } from '../core/state';
-import type { EditorRenderer } from '../rendering/renderer';
-import type { ShovelTool } from '../core/tools/shovelTool';
-import { TOOL_ID, PAINT_MODE } from '../core/state';
-import type { Point2D } from '../core/types';
+import type { EditorState } from "../core/state";
+import type { EditorRenderer } from "../rendering/renderer";
+import type { ShovelTool } from "../core/tools/shovelTool";
+import { TOOL_ID, PAINT_MODE } from "../core/state";
+import type { Point2D } from "../core/types";
 
 export class BrushStrokeController {
   private editorState: EditorState;
@@ -29,15 +29,15 @@ export class BrushStrokeController {
   }
 
   private bindEvents(): void {
-    this.domElement.addEventListener('mousedown', (e) => {
+    this.domElement.addEventListener("mousedown", (e) => {
       this.handleMouseDown(e);
     });
 
-    window.addEventListener('mousemove', (e) => {
+    window.addEventListener("mousemove", (e) => {
       this.handleMouseMove(e);
     });
 
-    window.addEventListener('mouseup', (e) => {
+    window.addEventListener("mouseup", (e) => {
       this.handleMouseUp(e);
     });
   }
@@ -120,10 +120,9 @@ export class BrushStrokeController {
       // shape finale consolidata
       const finalShape = this.editorState.world.shovel.shape;
 
-      // 🔥 effetti + fill + bordi
-      this.renderer.renderShovelEffects(finalShape);
-      this.renderer.renderShovelBase(finalShape);
-      this.renderer.renderShovelBorder(finalShape);
+      // 👉 usa il render completo che ruota i poligoni
+      this.renderer.renderFullShovel(finalShape);
+
       return;
     }
 

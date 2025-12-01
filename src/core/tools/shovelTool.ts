@@ -119,6 +119,49 @@ export class ShovelTool {
   }
 
   // ───────────────────────
+  // ROTAZIONE TIMBRO
+  // ───────────────────────
+
+  /** Angolo davvero casuale per ogni timbro (0–360°) */
+  private computeStampRotation(_worldPos: Point2D): number {
+    return Math.random() * 360;
+  }
+
+  /** Ruota l'outline locale del timbro attorno al suo centroide */
+  private rotateOutline(
+    outline: Point2D[],
+    angleDeg: number,
+  ): Point2D[] {
+    if (!outline.length || angleDeg === 0) {
+      // nessuna rotazione: ritorniamo una copia
+      return outline.map((p) => ({ ...p }));
+    }
+
+    // centroide dell'outline
+    let cx = 0;
+    let cy = 0;
+    for (const p of outline) {
+      cx += p.x;
+      cy += p.y;
+    }
+    cx /= outline.length;
+    cy /= outline.length;
+
+    const rad = (angleDeg * Math.PI) / 180;
+    const cosA = Math.cos(rad);
+    const sinA = Math.sin(rad);
+
+    return outline.map((p) => {
+      const dx = p.x - cx;
+      const dy = p.y - cy;
+      return {
+        x: cx + dx * cosA - dy * sinA,
+        y: cy + dx * sinA + dy * cosA,
+      };
+    });
+  }
+
+  // ───────────────────────
   // CREAZIONE TIMBRO SINGOLO
   // ───────────────────────
 
@@ -128,8 +171,15 @@ export class ShovelTool {
   ): MultiPolygon {
     const stamp = this.brushEngine.makeStamp(editor.brush);
 
+    // 1) angolo casuale per questo timbro
+    const angle = this.computeStampRotation(worldPos);
+
+    // 2) ruoto l'outline nel suo spazio locale
+    const rotatedOutline = this.rotateOutline(stamp.outline, angle);
+
+    // 3) poi traslo nel mondo
     const polygon: Polygon = {
-      outer: stamp.outline.map((pt) => ({
+      outer: rotatedOutline.map((pt) => ({
         x: pt.x + worldPos.x,
         y: pt.y + worldPos.y,
       })),

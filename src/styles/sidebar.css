@@ -1,0 +1,296 @@
+/* Layout base */
+.tf-sidebar {
+  width: 300px;
+  background: #120e0a;
+  border-right: 1px solid #2b2118;
+  color: #f2d28b;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  display: flex;
+  flex-direction: column;
+}
+
+.tf-sidebar-header {
+  padding: 14px 18px;
+  border-bottom: 1px solid #2b2118;
+  background: linear-gradient(to right, #18110c, #25180d);
+}
+
+.tf-sidebar-title {
+  font-weight: 600;
+  font-size: 14px;
+  letter-spacing: 0.08em;
+}
+
+/* Accordion */
+.tf-accordion-item + .tf-accordion-item {
+  border-top: 1px solid #2b2118;
+}
+
+.tf-accordion-header {
+  width: 100%;
+  padding: 12px 16px;
+  background: transparent;
+  border: none;
+  outline: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  color: inherit;
+  font-size: 13px;
+  text-align: left;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.tf-accordion-header:hover {
+  background: #1b130d;
+}
+
+.tf-accordion-header.is-active {
+  background: #2b1b0d;
+  color: #ffd26b;
+}
+
+.tf-accordion-header-main {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tf-accordion-title {
+  font-weight: 500;
+}
+
+.tf-accordion-chevron {
+  font-size: 11px;
+  opacity: 0.8;
+  transition: transform 0.15s ease;
+}
+
+.tf-accordion-body {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.18s ease;
+  background: #18110b;
+}
+
+.tf-accordion-body.is-open {
+  max-height: 1000px; /* sufficiente per il contenuto */
+}
+
+.tf-panel-content {
+  padding: 12px 16px 16px;
+}
+
+/* Gruppi / slider / ecc. */
+.tf-group {
+  margin-bottom: 14px;
+}
+
+.tf-group-label {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #b89b68;
+  margin-bottom: 6px;
+}
+
+.tf-panel-empty {
+  font-size: 12px;
+  color: #8f7b55;
+}
+
+.tf-slider-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tf-slider-row input[type="range"] {
+  flex: 1;
+}
+
+.tf-number-input {
+  width: 64px;
+  padding: 4px 6px;
+  background: #120e0a;
+  border: 1px solid #3b2d1d;
+  color: #f2d28b;
+  border-radius: 3px;
+  font-size: 12px;
+}
+
+/* Button group (Brush Shape) */
+.tf-button-group {
+  display: flex;
+  gap: 6px;
+}
+
+.tf-btn-toggle {
+  flex: 1;
+  padding: 6px 8px;
+  background: #15100b;
+  border: 1px solid #3b2d1d;
+  border-radius: 4px;
+  color: #e8c47f;
+  font-size: 11px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.tf-btn-toggle.is-active,
+.tf-btn-toggle:hover {
+  background: #2e1f10;
+  border-color: #f4c76a;
+  color: #ffe2a0;
+}
+
+/* Icone shape semplici */
+.tf-icon-shape {
+  width: 16px;
+  height: 16px;
+  border: 2px solid currentColor;
+  display: inline-block;
+}
+
+.tf-icon-circle {
+  border-radius: 999px;
+}
+
+.tf-icon-square {
+  border-radius: 3px;
+}
+
+.tf-icon-polygon {
+  border-radius: 4px;
+  transform: rotate(15deg);
+}
+
+/* Terrain grid */
+.tf-terrain-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.tf-terrain-tile {
+  padding: 4px;
+  background: #15100b;
+  border: 1px solid #3b2d1d;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: stretch;
+  font-size: 11px;
+  color: #e8c47f;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.05s ease;
+}
+
+.tf-terrain-tile:hover {
+  background: #24170d;
+}
+
+.tf-terrain-tile.is-active {
+  border-color: #f4c76a;
+  background: #2e1f10;
+}
+
+.tf-terrain-thumb {
+  height: 32px;
+  border-radius: 3px;
+  background-size: cover;
+  background-position: center;
+  border: 1px solid #443421;
+}
+
+.tf-terrain-label {
+  text-align: center;
+}
+
+/* qui puoi mettere vere texture via background-image */
+.tf-terrain-grass {
+  background: linear-gradient(#174d19, #0b3010);
+}
+
+.tf-terrain-dirt {
+  background: linear-gradient(#5a3a21, #422612);
+}
+
+.tf-terrain-sand {
+  background: linear-gradient(#c8a76b, #b38c4a);
+}
+
+.tf-terrain-stone {
+  background: linear-gradient(#6b6f78, #4a4e55);
+}
+
+.tf-terrain-water {
+  background: linear-gradient(#2496d0, #0a567e);
+}
+
+/* Toggle */
+.tf-group-inline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.tf-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.tf-toggle input {
+  display: none;
+}
+
+.tf-toggle-knob {
+  width: 32px;
+  height: 16px;
+  border-radius: 999px;
+  background: #2a2117;
+  position: relative;
+  border: 1px solid #4a3823;
+  transition: background 0.15s ease;
+}
+
+.tf-toggle-knob::after {
+  content: "";
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: #c9a067;
+  top: 1px;
+  left: 1px;
+  transition: transform 0.15s ease;
+}
+
+.tf-toggle input:checked + .tf-toggle-knob {
+  background: #f4c76a;
+}
+
+.tf-toggle input:checked + .tf-toggle-knob::after {
+  transform: translateX(14px);
+}
+
+.tf-toggle-label {
+  color: #e0be86;
+}
+
+/* Brush preview */
+.tf-brush-preview {
+  height: 80px;
+  border-radius: 6px;
+  background: radial-gradient(circle at center, #2e1f10, #120e0a);
+  border: 1px solid #3b2d1d;
+}
