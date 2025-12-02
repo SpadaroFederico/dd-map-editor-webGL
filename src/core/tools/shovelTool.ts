@@ -188,6 +188,10 @@ export class ShovelTool {
     return [polygon];
   }
 
+  // src/core/tools/shovelTool.ts
+
+// src/core/tools/shovelTool.ts
+
   // ───────────────────────
   // PUBBLIC: crea un singolo stamp per il PAINT
   // ───────────────────────
@@ -197,4 +201,52 @@ export class ShovelTool {
   ): MultiPolygon {
     return this.createStampAt(editor, worldPos);
   }
+
+  // ───────────────────────
+  // PREVIEW: stamp normalizzato in [-0.5, +0.5]
+  // ───────────────────────
+  public createTestStampPreview(editor: EditorState): MultiPolygon {
+    const stamp = this.brushEngine.makeStamp(editor.brush);
+    const outline = stamp.outline;
+    if (!outline || !outline.length) return [];
+
+    // bounding box del profilo locale
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+
+    for (const p of outline) {
+      if (p.x < minX) minX = p.x;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.y > maxY) maxY = p.y;
+    }
+
+    if (!isFinite(minX) || !isFinite(maxX) || !isFinite(minY) || !isFinite(maxY)) {
+      return [];
+    }
+
+    const width = maxX - minX || 1;
+    const height = maxY - minY || 1;
+    const maxSide = Math.max(width, height);
+
+    // centro del bounding box
+    const cx = (minX + maxX) / 2;
+    const cy = (minY + maxY) / 2;
+
+    // scala in modo che il lato massimo diventi 1.0
+    // così i punti finiscono più o meno in [-0.5, +0.5]
+    const scale = 1 / maxSide;
+
+    const polygon: Polygon = {
+      outer: outline.map((pt) => ({
+        x: (pt.x - cx) * scale,  // intorno a 0
+        y: (pt.y - cy) * scale,
+      })),
+    };
+
+    return [polygon];
+  }
 }
+

@@ -54,7 +54,7 @@ async function main(): Promise<void> {
   const renderer = new EditorRenderer(editorState, shovelTool, { canvas });
 
   // ora che renderer esiste, aggiorniamo la sidebar
-  sidebar.setRenderer(renderer);
+  sidebar.setRenderer(renderer, shovelTool);
 
   // ===== CAMERA CONTROLLER =====
   const cameraController = new CameraController(

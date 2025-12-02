@@ -294,3 +294,12 @@
   background: radial-gradient(circle at center, #2e1f10, #120e0a);
   border: 1px solid #3b2d1d;
 }
+
+/* Brush preview: forza dimensioni fisse del canvas */
+.tf-brush-preview-canvas {
+  display: block !important;
+  width: 300px !important;
+  height: 250px !important;
+  max-height: 200px !important;
+  box-sizing: content-box !important;
+}
