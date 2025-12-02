@@ -19,12 +19,23 @@ export const PAINT_MODE = {
 
 export type PaintMode = (typeof PAINT_MODE)[keyof typeof PAINT_MODE];
 
+export const BRUSH_SHAPE = {
+  Polygon: 'polygon',
+  Circle: 'circle',
+  Square: 'square',
+} as const;
+
+export type BrushShape = (typeof BRUSH_SHAPE)[keyof typeof BRUSH_SHAPE];
+
+
 // Parametri del brush
 export interface BrushSettings {
   size: number;       // diametro in unità mondo (pixel per ora)
   roughness: number;  // 0..1 quanto è frastagliato il bordo
   spacing: number;    // distanza tra uno stamp e l'altro
+  shape: BrushShape;  // 'polygon' | 'circle' | 'square'
 }
+
 
 // Stato shovel: la shape scavata
 export interface ShovelState {
@@ -87,6 +98,7 @@ export function createInitialEditorState(): EditorState {
       size: 900,
       roughness: 12,
       spacing: 40, // poi lo calcoliamo da size+roughness
+      shape: BRUSH_SHAPE.Polygon,
     },
     cameraScale: 1,
     cameraOffset: { x: 0, y: 0 },

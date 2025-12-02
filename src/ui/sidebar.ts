@@ -18,51 +18,8 @@ export function createSidebar(
     currentRenderer = r;
   }
 
-// -------------------------------------------------
-  // Sidebar root
   // -------------------------------------------------
-  const sidebar = document.createElement('div');
-  setStyles(sidebar, {
-    position: 'fixed',
-    top: '0',
-    left: '0', // a sinistra come nello screen
-    width: '260px',
-    height: '100%',
-    background: '#120e0a',
-    borderRight: '1px solid #2b2118',
-    color: '#f2d28b',
-    zIndex: '9999',
-    display: 'flex',
-    flexDirection: 'column',
-    fontFamily:
-      'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-    fontSize: '13px',
-  });
-
-  // header piccolo “Terrain Tools”
-  const headerTop = document.createElement('div');
-  headerTop.textContent = 'TERRAIN TOOLS';
-  setStyles(headerTop, {
-    padding: '12px 16px',
-    borderBottom: '1px solid #2b2118',
-    background: 'linear-gradient(to right, #18110c, #25180d)',
-    fontWeight: '600',
-    fontSize: '13px',
-    letterSpacing: '0.08em',
-  });
-  sidebar.appendChild(headerTop);
-
-  const contentWrapper = document.createElement('div');
-  setStyles(contentWrapper, {
-    flex: '1',
-    overflowY: 'auto',
-  });
-  sidebar.appendChild(contentWrapper);
-
-  root.appendChild(sidebar);
-
-  // -------------------------------------------------
-  // Helpers per creare elementi e gruppi
+  // Helpers
   // -------------------------------------------------
   function setStyles(el: HTMLElement, styles: Partial<CSSStyleDeclaration>) {
     Object.assign(el.style, styles);
@@ -70,21 +27,13 @@ export function createSidebar(
 
   function createGroup(title: string): HTMLElement {
     const group = document.createElement('div');
-    setStyles(group, {
-      marginBottom: '14px',
-    });
+    group.className = 'tf-group';
 
     const label = document.createElement('div');
+    label.className = 'tf-group-label';
     label.textContent = title;
-    setStyles(label, {
-      fontSize: '11px',
-      letterSpacing: '0.06em',
-      textTransform: 'uppercase',
-      color: '#b89b68',
-      marginBottom: '6px',
-    });
-    group.appendChild(label);
 
+    group.appendChild(label);
     return group;
   }
 
@@ -93,70 +42,62 @@ export function createSidebar(
     toolId: string | null,
   ): { header: HTMLButtonElement; body: HTMLDivElement; container: HTMLDivElement } {
     const container = document.createElement('div');
+    container.className = 'tf-accordion-item';
 
-    // header
     const header = document.createElement('button');
     header.type = 'button';
-    header.textContent = title;
-    header.dataset.toolId = toolId ?? '';
-    setStyles(header, {
-      width: '100%',
-      padding: '10px 12px',
-      background: 'transparent',
-      border: 'none',
-      borderBottom: '1px solid #2b2118',
-      color: '#f2d28b',
-      fontSize: '13px',
-      textAlign: 'left',
-      cursor: 'pointer',
-    });
+    header.className = 'tf-accordion-header';
+    if (toolId) header.dataset.toolId = toolId;
 
-    header.onmouseenter = () => {
-      if (!header.classList.contains('tf-accordion-active')) {
-        header.style.background = '#1b130d';
-      }
-    };
-    header.onmouseleave = () => {
-      if (!header.classList.contains('tf-accordion-active')) {
-        header.style.background = 'transparent';
-      }
-    };
+    const headerMain = document.createElement('div');
+    headerMain.className = 'tf-accordion-header-main';
 
-    // body
+    const titleSpan = document.createElement('span');
+    titleSpan.className = 'tf-accordion-title';
+    titleSpan.textContent = title;
+
+    headerMain.appendChild(titleSpan);
+
+    const chevron = document.createElement('span');
+    chevron.className = 'tf-accordion-chevron';
+    chevron.textContent = '▾';
+
+    header.appendChild(headerMain);
+    header.appendChild(chevron);
+
     const body = document.createElement('div');
-    setStyles(body, {
-      maxHeight: '0',
-      overflow: 'hidden',
-      transition: 'max-height 0.18s ease',
-      background: '#18110b',
-    });
+    body.className = 'tf-accordion-body';
+
+    const bodyInner = document.createElement('div');
+    bodyInner.className = 'tf-panel-content';
+    body.appendChild(bodyInner);
 
     container.appendChild(header);
     container.appendChild(body);
 
-    return { header, body, container };
+    return { header, body: bodyInner, container };
   }
 
-  function openSection(header: HTMLButtonElement, body: HTMLDivElement) {
-    // chiudo tutte
-    sidebar.querySelectorAll<HTMLButtonElement>('.tf-accordion-active').forEach((h) => {
-      h.classList.remove('tf-accordion-active');
-      h.style.background = 'transparent';
-    });
-    sidebar.querySelectorAll<HTMLDivElement>('.tf-accordion-body-open').forEach((b) => {
-      b.classList.remove('tf-accordion-body-open');
-      b.style.maxHeight = '0';
-    });
+  function openSection(header: HTMLButtonElement, bodyInner: HTMLDivElement) {
+    // chiudi tutte
+    sidebar
+      .querySelectorAll<HTMLButtonElement>('.tf-accordion-header.is-active')
+      .forEach((h) => h.classList.remove('is-active'));
 
-    // apro questa
-    header.classList.add('tf-accordion-active');
-    header.style.background = '#2b1b0d';
-    body.classList.add('tf-accordion-body-open');
-    body.style.maxHeight = '1000px';
+    sidebar
+      .querySelectorAll<HTMLDivElement>('.tf-accordion-body.is-open')
+      .forEach((b) => b.classList.remove('is-open'));
+
+    // apri questa
+    header.classList.add('is-active');
+    const body = header.nextElementSibling as HTMLDivElement | null;
+    if (body && body.classList.contains('tf-accordion-body')) {
+      body.classList.add('is-open');
+    }
   }
 
-    // -------------------------------------------------
-  // MATERIAL PICKER – dati e helper condivisi
+  // -------------------------------------------------
+  // MATERIAL PICKER – SOLO PER PAINT
   // -------------------------------------------------
   const materials = [
     {
@@ -180,7 +121,6 @@ export function createSidebar(
 
   let selectedMaterialId: MaterialIdLiteral = editorState.activeMaterial as any;
 
-  // ogni materiale può avere più bottoni (shovel + paint)
   const materialButtons: Record<string, HTMLButtonElement[]> = {};
   let openMaterialModal: (() => void) | null = null;
 
@@ -193,30 +133,115 @@ export function createSidebar(
     Object.entries(materialButtons).forEach(([id, buttons]) => {
       const active = id === selectedMaterialId;
       buttons.forEach((btn) => {
-        btn.style.outline = active ? '2px solid #f5c14a' : '1px solid #444';
-        btn.style.boxShadow = active
-          ? '0 0 8px rgba(245, 193, 74, 0.7)'
-          : 'none';
+        if (active) {
+          btn.classList.add('is-active');
+        } else {
+          btn.classList.remove('is-active');
+        }
       });
     });
   }
 
-  function applyMaterial(id: MaterialIdLiteral) {
+    function applyMaterial(id: MaterialIdLiteral) {
     selectedMaterialId = id;
     editorState.activeMaterial = id as any;
 
-    if (currentRenderer) {
-      currentRenderer.buildBackgroundPaintLayer(editorState.activeMaterial);
+    updateMaterialButtonsHighlight();
     }
 
-    updateMaterialButtonsHighlight();
+
+  // -------------------------------------------------
+  // BRUSH SHAPE (polygon / circle / square) – condiviso
+  // -------------------------------------------------
+  type BrushShapeLiteral = 'polygon' | 'circle' | 'square';
+
+  let currentBrushShape = (((editorState.brush as any).shape ??
+    'polygon') as BrushShapeLiteral);
+
+  const shapeButtons: HTMLButtonElement[] = [];
+
+  let shovelRoughGroupEl: HTMLElement | null = null;
+  let paintRoughGroupEl: HTMLElement | null = null;
+
+  function applyBrushShape(shape: BrushShapeLiteral) {
+    currentBrushShape = shape;
+    (editorState.brush as any).shape = shape;
+
+    // evidenzia i pulsanti attivi
+    shapeButtons.forEach((btn) => {
+      const btnShape = btn.dataset.shapeId as BrushShapeLiteral | undefined;
+      if (!btnShape) return;
+      if (btnShape === shape) {
+        btn.classList.add('is-active');
+      } else {
+        btn.classList.remove('is-active');
+      }
+    });
+
+    // 👇 Roughness visibile SOLO se shape = 'polygon'
+    const display = shape === 'polygon' ? '' : 'none';
+    if (shovelRoughGroupEl) shovelRoughGroupEl.style.display = display;
+    if (paintRoughGroupEl) paintRoughGroupEl.style.display = display;
   }
 
-    root.appendChild(sidebar);
+  function createShapeButton(
+    shape: BrushShapeLiteral,
+    label: string,
+    iconClass: string,
+  ): HTMLButtonElement {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'tf-btn-toggle';
+    btn.dataset.shapeId = shape;
 
+    const icon = document.createElement('span');
+    icon.className = `tf-icon-shape ${iconClass}`;
+    btn.appendChild(icon);
 
-      // -------------------------------------------------
-  // MODALE CATALOGO MATERIALI (overlay condiviso)
+    const text = document.createElement('span');
+    text.textContent = label;
+    btn.appendChild(text);
+
+    btn.onclick = () => applyBrushShape(shape);
+
+    shapeButtons.push(btn);
+    return btn;
+  }
+
+  // -------------------------------------------------
+  // Sidebar root
+  // -------------------------------------------------
+  const sidebar = document.createElement('div');
+  sidebar.className = 'tf-sidebar';
+  setStyles(sidebar, {
+    position: 'fixed',
+    top: '0',
+    left: '0',
+    height: '100%',
+    zIndex: '9999',
+  });
+
+  const headerTop = document.createElement('div');
+  headerTop.className = 'tf-sidebar-header';
+
+  const headerTitle = document.createElement('div');
+  headerTitle.className = 'tf-sidebar-title';
+  headerTitle.textContent = 'TERRAIN TOOLS';
+
+  headerTop.appendChild(headerTitle);
+  sidebar.appendChild(headerTop);
+
+  const contentWrapper = document.createElement('div');
+  setStyles(contentWrapper, {
+    flex: '1',
+    overflowY: 'auto',
+  });
+  sidebar.appendChild(contentWrapper);
+
+  root.appendChild(sidebar);
+
+  // -------------------------------------------------
+  // MODALE CATALOGO MATERIALI
   // -------------------------------------------------
   const modalOverlay = document.createElement('div');
   setStyles(modalOverlay, {
@@ -273,45 +298,23 @@ export function createSidebar(
   modalHeader.appendChild(modalClose);
 
   const modalGrid = document.createElement('div');
-  setStyles(modalGrid, {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(4, minmax(0,1fr))',
-    gap: '10px',
-  });
+  modalGrid.className = 'tf-terrain-grid';
   modal.appendChild(modalGrid);
 
   materials.forEach((mat) => {
     const itemBtn = document.createElement('button');
     itemBtn.type = 'button';
-    setStyles(itemBtn, {
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-      gap: '4px',
-      borderRadius: '6px',
-      border: '1px solid #3b2d1d',
-      padding: '4px',
-      backgroundColor: '#20130a',
-      cursor: 'pointer',
-    });
+    itemBtn.className = 'tf-terrain-tile';
 
     const thumb = document.createElement('div');
-    setStyles(thumb, {
-      width: '60px',
-      height: '60px',
-      borderRadius: '4px',
-      backgroundSize: 'cover',
-      backgroundPosition: 'center',
-      backgroundImage: `url(${mat.preview})`,
-    });
-    itemBtn.appendChild(thumb);
+    thumb.className = 'tf-terrain-thumb';
+    thumb.style.backgroundImage = `url(${mat.preview})`;
 
     const label = document.createElement('div');
+    label.className = 'tf-terrain-label';
     label.textContent = mat.label;
-    setStyles(label, {
-      fontSize: '11px',
-      color: '#e3c78a',
-    });
+
+    itemBtn.appendChild(thumb);
     itemBtn.appendChild(label);
 
     itemBtn.onclick = () => {
@@ -341,70 +344,44 @@ export function createSidebar(
   // SECTION 1 – CURSOR TOOL
   // -------------------------------------------------
   const cursorSection = createAccordionSection('Cursor Tool', 'cursor');
-  const cursorBodyInner = document.createElement('div');
-  setStyles(cursorBodyInner, {
-    padding: '10px 14px 12px',
-  });
+  const cursorBodyInner = cursorSection.body;
 
   const cursorText = document.createElement('div');
+  cursorText.className = 'tf-panel-empty';
   cursorText.textContent =
     'Nessuna impostazione. Usa il cursore per selezionare e navigare.';
-  setStyles(cursorText, {
-    fontSize: '12px',
-    color: '#8f7b55',
-  });
-
   cursorBodyInner.appendChild(cursorText);
-  cursorSection.body.appendChild(cursorBodyInner);
+
   contentWrapper.appendChild(cursorSection.container);
 
-  // click header → attiva tool e fisarmonica
   cursorSection.header.onclick = () => {
     editorState.activeTool = 'cursor' as any;
-    openSection(cursorSection.header, cursorSection.body);
+    openSection(cursorSection.header, cursorBodyInner);
   };
 
   // -------------------------------------------------
-  // SECTION 2 – SHOVEL TOOL
+  // SECTION 2 – SHOVEL TOOL (size + roughness + shape)
   // -------------------------------------------------
   const shovelSection = createAccordionSection('Shovel Tool', 'shovel');
-  const shovelBodyInner = document.createElement('div');
-  setStyles(shovelBodyInner, {
-    padding: '10px 14px 12px',
-  });
+  const shovelBodyInner = shovelSection.body;
 
-  // Brush Size (usa lo stesso editorState.brush.size)
+  // Brush Size
   const shovelSizeGroup = createGroup('Brush Size');
   const shovelSizeRow = document.createElement('div');
-  setStyles(shovelSizeRow, {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-  });
+  shovelSizeRow.className = 'tf-slider-row';
 
   const shovelSizeRange = document.createElement('input');
   shovelSizeRange.type = 'range';
   shovelSizeRange.min = '20';
   shovelSizeRange.max = '2000';
   shovelSizeRange.value = editorState.brush.size.toString();
-  setStyles(shovelSizeRange, {
-    flex: '1',
-  });
 
   const shovelSizeValue = document.createElement('input');
   shovelSizeValue.type = 'number';
   shovelSizeValue.min = '20';
   shovelSizeValue.max = '2000';
   shovelSizeValue.value = editorState.brush.size.toString();
-  setStyles(shovelSizeValue, {
-    width: '70px',
-    padding: '4px 6px',
-    background: '#120e0a',
-    border: '1px solid #3b2d1d',
-    color: '#f2d28b',
-    borderRadius: '3px',
-    fontSize: '12px',
-  });
+  shovelSizeValue.className = 'tf-number-input';
 
   const applyShovelSize = (val: number) => {
     const min = Number(shovelSizeRange.min);
@@ -425,36 +402,22 @@ export function createSidebar(
 
   // Roughness
   const shovelRoughGroup = createGroup('Roughness');
+  shovelRoughGroupEl = shovelRoughGroup;
   const shovelRoughRow = document.createElement('div');
-  setStyles(shovelRoughRow, {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-  });
+  shovelRoughRow.className = 'tf-slider-row';
 
   const shovelRoughRange = document.createElement('input');
   shovelRoughRange.type = 'range';
   shovelRoughRange.min = '0';
   shovelRoughRange.max = '50';
   shovelRoughRange.value = editorState.brush.roughness.toString();
-  setStyles(shovelRoughRange, {
-    flex: '1',
-  });
 
   const shovelRoughValue = document.createElement('input');
   shovelRoughValue.type = 'number';
   shovelRoughValue.min = '0';
   shovelRoughValue.max = '50';
   shovelRoughValue.value = editorState.brush.roughness.toString();
-  setStyles(shovelRoughValue, {
-    width: '70px',
-    padding: '4px 6px',
-    background: '#120e0a',
-    border: '1px solid #3b2d1d',
-    color: '#f2d28b',
-    borderRadius: '3px',
-    fontSize: '12px',
-  });
+  shovelRoughValue.className = 'tf-number-input';
 
   const applyShovelRough = (val: number) => {
     const min = Number(shovelRoughRange.min);
@@ -475,132 +438,51 @@ export function createSidebar(
   shovelRoughGroup.appendChild(shovelRoughRow);
   shovelBodyInner.appendChild(shovelRoughGroup);
 
-  // Material (Terrain Type) – tile picker
-  const shovelMatGroup = createGroup('Terrain Type');
+  // Brush Shape (condivisa)
+  const shovelShapeGroup = createGroup('Brush Shape');
+  const shovelShapeRow = document.createElement('div');
+  shovelShapeRow.className = 'tf-button-group';
 
-  const shovelMatRow = document.createElement('div');
-  setStyles(shovelMatRow, {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-  });
+  const shovelPolygonBtn = createShapeButton('polygon', 'Polygon', 'tf-icon-polygon');
+  const shovelCircleBtn = createShapeButton('circle', 'Circle', 'tf-icon-circle');
+  const shovelSquareBtn = createShapeButton('square', 'Square', 'tf-icon-square');
 
-  const shovelTilesGrid = document.createElement('div');
-  setStyles(shovelTilesGrid, {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(4, 1fr)',
-    gap: '6px',
-    flex: '1',
-  });
+  shovelShapeRow.appendChild(shovelPolygonBtn);
+  shovelShapeRow.appendChild(shovelCircleBtn);
+  shovelShapeRow.appendChild(shovelSquareBtn);
+  shovelShapeGroup.appendChild(shovelShapeRow);
+  shovelBodyInner.appendChild(shovelShapeGroup);
 
-  const quickMaterials = materials.slice(0, 4);
-  quickMaterials.forEach((mat) => {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.title = mat.label;
-    setStyles(btn, {
-      width: '40px',
-      height: '40px',
-      borderRadius: '4px',
-      border: '1px solid #444',
-      padding: '0',
-      cursor: 'pointer',
-      backgroundColor: '#222',
-      backgroundSize: 'cover',
-      backgroundPosition: 'center',
-      backgroundImage: `url(${mat.preview})`,
-    });
-
-    btn.onmouseenter = () => {
-      btn.style.filter = 'brightness(1.1)';
-    };
-    btn.onmouseleave = () => {
-      btn.style.filter = 'none';
-    };
-
-    btn.onclick = () => applyMaterial(mat.id as MaterialIdLiteral);
-
-    shovelTilesGrid.appendChild(btn);
-    registerMaterialButton(mat.id, btn);
-  });
-
-  const shovelMoreBtn = document.createElement('button');
-  shovelMoreBtn.type = 'button';
-  shovelMoreBtn.textContent = '⋯';
-  setStyles(shovelMoreBtn, {
-    width: '28px',
-    height: '28px',
-    borderRadius: '999px',
-    border: '1px solid #555',
-    backgroundColor: '#22140a',
-    color: '#f5c14a',
-    cursor: 'pointer',
-    flexShrink: '0',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontSize: '18px',
-  });
-
-  shovelMoreBtn.onclick = () => {
-    if (openMaterialModal) openMaterialModal();
-  };
-
-  shovelMatRow.appendChild(shovelTilesGrid);
-  shovelMatRow.appendChild(shovelMoreBtn);
-  shovelMatGroup.appendChild(shovelMatRow);
-  shovelBodyInner.appendChild(shovelMatGroup);
-
-
-  shovelSection.body.appendChild(shovelBodyInner);
   contentWrapper.appendChild(shovelSection.container);
 
   shovelSection.header.onclick = () => {
     editorState.activeTool = 'shovel' as any;
-    openSection(shovelSection.header, shovelSection.body);
+    openSection(shovelSection.header, shovelBodyInner);
   };
 
   // -------------------------------------------------
   // SECTION 3 – PAINT TOOL
   // -------------------------------------------------
   const paintSection = createAccordionSection('Paint Tool', 'paint');
-  const paintBodyInner = document.createElement('div');
-  setStyles(paintBodyInner, {
-    padding: '10px 14px 12px',
-  });
+  const paintBodyInner = paintSection.body;
 
-  // Brush Size (riusa lo stesso editorState.brush.size)
+  // Brush Size
   const paintSizeGroup = createGroup('Brush Size');
   const paintSizeRow = document.createElement('div');
-  setStyles(paintSizeRow, {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-  });
+  paintSizeRow.className = 'tf-slider-row';
 
   const paintSizeRange = document.createElement('input');
   paintSizeRange.type = 'range';
   paintSizeRange.min = '20';
   paintSizeRange.max = '2000';
   paintSizeRange.value = editorState.brush.size.toString();
-  setStyles(paintSizeRange, {
-    flex: '1',
-  });
 
   const paintSizeValue = document.createElement('input');
   paintSizeValue.type = 'number';
   paintSizeValue.min = '20';
   paintSizeValue.max = '2000';
   paintSizeValue.value = editorState.brush.size.toString();
-  setStyles(paintSizeValue, {
-    width: '70px',
-    padding: '4px 6px',
-    background: '#120e0a',
-    border: '1px solid #3b2d1d',
-    color: '#f2d28b',
-    borderRadius: '3px',
-    fontSize: '12px',
-  });
+  paintSizeValue.className = 'tf-number-input';
 
   const applyPaintSize = (val: number) => {
     const min = Number(paintSizeRange.min);
@@ -619,38 +501,24 @@ export function createSidebar(
   paintSizeGroup.appendChild(paintSizeRow);
   paintBodyInner.appendChild(paintSizeGroup);
 
-  // Roughness (per eventuale jitter del paint, riusa editorState.brush.roughness)
+  // Roughness
   const paintRoughGroup = createGroup('Roughness');
+  paintRoughGroupEl = paintRoughGroup;
   const paintRoughRow = document.createElement('div');
-  setStyles(paintRoughRow, {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-  });
+  paintRoughRow.className = 'tf-slider-row';
 
   const paintRoughRange = document.createElement('input');
   paintRoughRange.type = 'range';
   paintRoughRange.min = '0';
   paintRoughRange.max = '50';
   paintRoughRange.value = editorState.brush.roughness.toString();
-  setStyles(paintRoughRange, {
-    flex: '1',
-  });
 
   const paintRoughValue = document.createElement('input');
   paintRoughValue.type = 'number';
   paintRoughValue.min = '0';
   paintRoughValue.max = '50';
   paintRoughValue.value = editorState.brush.roughness.toString();
-  setStyles(paintRoughValue, {
-    width: '70px',
-    padding: '4px 6px',
-    background: '#120e0a',
-    border: '1px solid #3b2d1d',
-    color: '#f2d28b',
-    borderRadius: '3px',
-    fontSize: '12px',
-  });
+  paintRoughValue.className = 'tf-number-input';
 
   const applyPaintRough = (val: number) => {
     const min = Number(paintRoughRange.min);
@@ -671,7 +539,7 @@ export function createSidebar(
   paintRoughGroup.appendChild(paintRoughRow);
   paintBodyInner.appendChild(paintRoughGroup);
 
-  // Paint Mode (background / foreground / top)
+  // Paint Mode
   const modeGroup = createGroup('Paint Mode');
   const modeSelect = document.createElement('select');
   modeSelect.innerHTML = `
@@ -680,15 +548,7 @@ export function createSidebar(
     <option value="top">Top</option>
   `;
   modeSelect.value = editorState.activePaintMode as any;
-  setStyles(modeSelect, {
-    width: '100%',
-    padding: '5px 6px',
-    background: '#120e0a',
-    border: '1px solid #3b2d1d',
-    color: '#f2d28b',
-    borderRadius: '3px',
-    fontSize: '12px',
-  });
+  modeSelect.className = 'tf-number-input';
 
   modeSelect.onchange = () => {
     editorState.activePaintMode = modeSelect.value as any;
@@ -697,48 +557,46 @@ export function createSidebar(
   modeGroup.appendChild(modeSelect);
   paintBodyInner.appendChild(modeGroup);
 
-    // Material (Terrain Type) per il paint – stesso picker
-  const paintMatGroup = createGroup('Terrain Type');
+  // Brush Shape (stesso picker, stessa shape condivisa)
+  const paintShapeGroup = createGroup('Brush Shape');
+  const paintShapeRow = document.createElement('div');
+  paintShapeRow.className = 'tf-button-group';
 
+  const paintPolygonBtn = createShapeButton('polygon', 'Polygon', 'tf-icon-polygon');
+  const paintCircleBtn = createShapeButton('circle', 'Circle', 'tf-icon-circle');
+  const paintSquareBtn = createShapeButton('square', 'Square', 'tf-icon-square');
+
+  paintShapeRow.appendChild(paintPolygonBtn);
+  paintShapeRow.appendChild(paintCircleBtn);
+  paintShapeRow.appendChild(paintSquareBtn);
+  paintShapeGroup.appendChild(paintShapeRow);
+  paintBodyInner.appendChild(paintShapeGroup);
+
+  // Material picker (solo Paint)
+  const paintMatGroup = createGroup('Terrain Type');
   const paintMatRow = document.createElement('div');
-  setStyles(paintMatRow, {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-  });
+  paintMatRow.className = 'tf-slider-row';
 
   const paintTilesGrid = document.createElement('div');
-  setStyles(paintTilesGrid, {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(4, 1fr)',
-    gap: '6px',
-    flex: '1',
-  });
+  paintTilesGrid.className = 'tf-terrain-grid';
 
   const quickMaterialsPaint = materials.slice(0, 4);
   quickMaterialsPaint.forEach((mat) => {
     const btn = document.createElement('button');
     btn.type = 'button';
+    btn.className = 'tf-terrain-tile';
     btn.title = mat.label;
-    setStyles(btn, {
-      width: '40px',
-      height: '40px',
-      borderRadius: '4px',
-      border: '1px solid #444',
-      padding: '0',
-      cursor: 'pointer',
-      backgroundColor: '#222',
-      backgroundSize: 'cover',
-      backgroundPosition: 'center',
-      backgroundImage: `url(${mat.preview})`,
-    });
 
-    btn.onmouseenter = () => {
-      btn.style.filter = 'brightness(1.1)';
-    };
-    btn.onmouseleave = () => {
-      btn.style.filter = 'none';
-    };
+    const thumb = document.createElement('div');
+    thumb.className = 'tf-terrain-thumb';
+    thumb.style.backgroundImage = `url(${mat.preview})`;
+
+    const label = document.createElement('div');
+    label.className = 'tf-terrain-label';
+    label.textContent = mat.label;
+
+    btn.appendChild(thumb);
+    btn.appendChild(label);
 
     btn.onclick = () => applyMaterial(mat.id as MaterialIdLiteral);
 
@@ -749,21 +607,10 @@ export function createSidebar(
   const paintMoreBtn = document.createElement('button');
   paintMoreBtn.type = 'button';
   paintMoreBtn.textContent = '⋯';
-  setStyles(paintMoreBtn, {
-    width: '28px',
-    height: '28px',
-    borderRadius: '999px',
-    border: '1px solid #555',
-    backgroundColor: '#22140a',
-    color: '#f5c14a',
-    cursor: 'pointer',
-    flexShrink: '0',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontSize: '18px',
-  });
-
+  paintMoreBtn.className = 'tf-btn-toggle';
+  paintMoreBtn.style.width = '40px';
+  paintMoreBtn.style.height = '40px';
+  paintMoreBtn.style.borderRadius = '999px';
   paintMoreBtn.onclick = () => {
     if (openMaterialModal) openMaterialModal();
   };
@@ -773,35 +620,30 @@ export function createSidebar(
   paintMatGroup.appendChild(paintMatRow);
   paintBodyInner.appendChild(paintMatGroup);
 
-
-  paintSection.body.appendChild(paintBodyInner);
   contentWrapper.appendChild(paintSection.container);
 
   paintSection.header.onclick = () => {
     editorState.activeTool = 'paint' as any;
-    openSection(paintSection.header, paintSection.body);
+    openSection(paintSection.header, paintBodyInner);
   };
 
   // -------------------------------------------------
-  // Stato iniziale: apriamo la sezione in base al tool attivo
+  // Stato iniziale
   // -------------------------------------------------
   const activeTool = editorState.activeTool as any;
 
   if (activeTool === 'paint') {
-    openSection(paintSection.header, paintSection.body);
+    openSection(paintSection.header, paintBodyInner);
   } else if (activeTool === 'cursor') {
-    openSection(cursorSection.header, cursorSection.body);
+    openSection(cursorSection.header, cursorBodyInner);
   } else {
-    // default: shovel
     editorState.activeTool = 'shovel' as any;
-    openSection(shovelSection.header, shovelSection.body);
+    openSection(shovelSection.header, shovelBodyInner);
   }
 
-    // evidenzia il materiale corrente (grass/dirt/water) sui bottoni
-    updateMaterialButtonsHighlight();
+  updateMaterialButtonsHighlight();
+  applyBrushShape(currentBrushShape);
 
-
-  // ritorniamo le API per il main.ts
   return {
     setRenderer,
   };

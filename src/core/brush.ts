@@ -15,12 +15,46 @@ export interface BrushEngine {
   spacingFromSettings(settings: BrushSettings): number;
 }
 
+function makeCircleRing(radius: number, segments: number = 32): LinearRing {
+  const ring: LinearRing = [];
+  for (let i = 0; i < segments; i++) {
+    const a = (i / segments) * Math.PI * 2;
+    ring.push({
+      x: Math.cos(a) * radius,
+      y: Math.sin(a) * radius,
+    });
+  }
+  return ring;
+}
+
+function makeSquareRing(radius: number): LinearRing {
+  const r = radius;
+  const ring: LinearRing = [
+    { x: -r, y: -r },
+    { x:  r, y: -r },
+    { x:  r, y:  r },
+    { x: -r, y:  r },
+  ];
+  return ring;
+}
+
+
 export const StampBrushEngine: BrushEngine = {
   makeStamp(settings: BrushSettings): BrushStamp {
     const radius = settings.size / 2;
+    let outline: LinearRing;
 
-    const def = getStampDefinitionForRoughness(settings.roughness);
-    const outline = stampCoordsToRing(def.coords, radius);
+    const shape = (settings as any).shape ?? 'polygon';
+
+    if (shape === 'circle') {
+      outline = makeCircleRing(radius);
+    } else if (shape === 'square') {
+      outline = makeSquareRing(radius);
+    } else {
+      // polygon: usa la definizione frastagliata basata su roughness
+      const def = getStampDefinitionForRoughness(settings.roughness);
+      outline = stampCoordsToRing(def.coords, radius);
+    }
 
     return { outline, radius };
   },
@@ -28,10 +62,9 @@ export const StampBrushEngine: BrushEngine = {
   spacingFromSettings(settings: BrushSettings): number {
     const size = settings.size;
 
-    // Puoi tarare qui: per ora teniamo 300 come ti andava bene
+    // qui poi possiamo tarare spacing diverso per square (tipo size, per andare tile-per-tile)
     const spacing = 300;
 
-    // Se ti dà fastidio, commenta pure il log
     console.log('[Brush] size =', size, 'spacing =', spacing);
 
     return spacing;

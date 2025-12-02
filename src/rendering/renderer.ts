@@ -1,7 +1,7 @@
 // src/rendering/renderer.ts
 
 import * as PIXI from "pixi.js";
-import type { EditorState } from "../core/state";
+import type { EditorState, PaintMode } from "../core/state";
 import type {
   TilePatternConfig,
   MultiPolygon,
@@ -74,6 +74,13 @@ interface EditorRendererOptions {
   canvas?: HTMLCanvasElement;
 }
 
+type PaintStrokeLayer = {
+  mode: PaintMode;
+  materialId: MaterialId;
+  container: PIXI.Container;
+  mask: PIXI.Graphics;
+};
+
 export class EditorRenderer {
   app: PIXI.Application;
   worldContainer: PIXI.Container;
@@ -100,9 +107,13 @@ export class EditorRenderer {
   private shovelBaseMaskGraphics: PIXI.Graphics;
   private shovelStrokeMaskGraphics: PIXI.Graphics;
 
-  // PAINT BACKGROUND (bg): tiles + mask
-  private bgPaintContainer: PIXI.Container;
-  private bgPaintMask: PIXI.Graphics;
+  // PAINT: root per i 3 livelli
+  private bgPaintRoot: PIXI.Container;
+  private fgPaintRoot: PIXI.Container;
+  private topPaintRoot: PIXI.Container;
+
+  // stroke corrente (qualsiasi modalità: bg / fg / top)
+  private currentPaintStroke: PaintStrokeLayer | null = null;
 
   // GLOW (alone bianco)
   private shovelGlowGraphics: PIXI.Graphics;
@@ -136,34 +147,39 @@ export class EditorRenderer {
     this.backgroundTilesContainer = new PIXI.Container();
     this.worldContainer.addChild(this.backgroundTilesContainer);
 
-    // 2) MASK BG
-    this.bgPaintMask = new PIXI.Graphics();
-    this.bgPaintMask.alpha = 1;
-    this.worldContainer.addChild(this.bgPaintMask);
+    // 2) LAYER PAINT BACKGROUND
+    this.bgPaintRoot = new PIXI.Container();
+    this.worldContainer.addChild(this.bgPaintRoot);
 
-    // 3) PAINT BG
-    this.bgPaintContainer = new PIXI.Container();
-    this.bgPaintContainer.visible = false;
-    this.worldContainer.addChild(this.bgPaintContainer);
-    this.bgPaintContainer.mask = this.bgPaintMask;
-
-    // 4) GLOW SHOVEL
+    // 3) GLOW SHOVEL
     this.shovelGlowGraphics = new PIXI.Graphics();
     this.shovelGlowGraphics.alpha = 0.4;
     this.shovelGlowGraphics.filters = [new BlurFilter(50)];
     this.worldContainer.addChild(this.shovelGlowGraphics);
 
-    // 5) SHOVEL FILL
+    // 4) SHOVEL FILL
     this.shovelFillContainer = new PIXI.Container();
     this.worldContainer.addChild(this.shovelFillContainer);
 
-    // 6) INNER SHADOW
+    // 5) INNER SHADOW
     this.shovelInnerShadowGraphics = new PIXI.Graphics();
     this.shovelInnerShadowGraphics.alpha = 0.7;
     this.shovelInnerShadowGraphics.filters = [new BlurFilter(12)];
     this.worldContainer.addChild(this.shovelInnerShadowGraphics);
 
-    // 7) MASK SHOVEL
+    // 6) BORDO SHOVEL
+    this.shovelBorderGraphics = new PIXI.Graphics();
+    this.worldContainer.addChild(this.shovelBorderGraphics);
+
+    // 7) LAYER PAINT FOREGROUND (sopra bordi shovel)
+    this.fgPaintRoot = new PIXI.Container();
+    this.worldContainer.addChild(this.fgPaintRoot);
+
+    // 8) LAYER PAINT TOP (sopra tutto)
+    this.topPaintRoot = new PIXI.Container();
+    this.worldContainer.addChild(this.topPaintRoot);
+
+    // 9) MASK SHOVEL
     this.shovelMaskContainer = new PIXI.Container();
     this.shovelBaseMaskGraphics = new PIXI.Graphics();
     this.shovelStrokeMaskGraphics = new PIXI.Graphics();
@@ -174,9 +190,7 @@ export class EditorRenderer {
     this.worldContainer.addChild(this.shovelMaskContainer);
     this.shovelFillContainer.mask = this.shovelMaskContainer;
 
-    // 8) BORDO SHOVEL
-    this.shovelBorderGraphics = new PIXI.Graphics();
-    this.worldContainer.addChild(this.shovelBorderGraphics);
+    this.fgPaintRoot.mask = this.shovelMaskContainer;
 
     // Tile pattern terreno (dirt) per la mappa base
     const dirtConfig: TilePatternConfig = {
@@ -214,9 +228,6 @@ export class EditorRenderer {
     await this.loadMaterialTextures();
     this.drawBackgroundFromPattern();
     this.drawShovelPatternFromPattern(); // layer di ERBA per la shovel
-
-    // tiles per il paint BG (una sola volta)
-    this.buildBackgroundPaintLayer(this.editorState.activeMaterial);
 
     const shape = this.editorState.world.shovel.shape;
     this.renderFullShovel(shape);
@@ -344,9 +355,7 @@ export class EditorRenderer {
         const x = (i - half) * t;
         const y = (j - half) * t;
 
-        // 👇 QUI LA DIFFERENZA:
-        // usiamo un offset grande in i/j per avere un pattern SFOCATO rispetto al background,
-        // così non sembra lo stesso layer di erba del paint/background
+        // offset per non avere lo stesso pattern del background
         const idx = this.dirtPattern.getVariantIndex(i + 1000, j + 2000);
 
         const tex = textures[idx % n];
@@ -363,14 +372,35 @@ export class EditorRenderer {
   }
 
   // ---------------------------------------------------------
-  // LAYER PAINT BACKGROUND
+  // HELPERS PAINT (layer per stroke, per modalità)
   // ---------------------------------------------------------
-  private getMaterialTint(_materialId: MaterialId): number {
-    return 0xff0000;
+  private getPaintRootForMode(mode: PaintMode): PIXI.Container {
+    switch (mode) {
+      case "foreground":
+        return this.fgPaintRoot;
+      case "top":
+        return this.topPaintRoot;
+      case "background":
+      default:
+        return this.bgPaintRoot;
+    }
   }
 
-  public buildBackgroundPaintLayer(materialId: MaterialId): void {
-    this.bgPaintContainer.removeChildren();
+  private createPaintStrokeLayer(
+    mode: PaintMode,
+    materialId: MaterialId,
+  ): PaintStrokeLayer {
+    const root = this.getPaintRootForMode(mode);
+
+    const container = new PIXI.Container();
+    const mask = new PIXI.Graphics();
+
+    container.visible = true;
+    container.mask = mask;
+
+    // l’ordine: prima la texture, poi la mask
+    root.addChild(container);
+    root.addChild(mask);
 
     const textures =
       this.materialTextures[materialId] ??
@@ -378,29 +408,73 @@ export class EditorRenderer {
       [];
 
     const n = textures.length;
-    if (n === 0) return;
+    if (n > 0) {
+      const t = this.dirtPattern.config.tileSize;
+      const half = this.tilesPerSide / 2;
 
-    const t = this.dirtPattern.config.tileSize;
-    const half = this.tilesPerSide / 2;
+      for (let i = 0; i < this.tilesPerSide; i++) {
+        for (let j = 0; j < this.tilesPerSide; j++) {
+          const x = (i - half) * t;
+          const y = (j - half) * t;
 
-    for (let i = 0; i < this.tilesPerSide; i++) {
-      for (let j = 0; j < this.tilesPerSide; j++) {
-        const x = (i - half) * t;
-        const y = (j - half) * t;
+          const idx = this.dirtPattern.getVariantIndex(i, j);
+          const tex = textures[idx % n];
 
-        // il background usa il pattern “normale”
-        const idx = this.dirtPattern.getVariantIndex(i, j);
-        const tex = textures[idx % n];
+          const sprite = new PIXI.Sprite(tex);
+          sprite.x = x;
+          sprite.y = y;
+          sprite.width = t;
+          sprite.height = t;
 
-        const sprite = new PIXI.Sprite(tex);
-        sprite.x = x;
-        sprite.y = y;
-        sprite.width = t;
-        sprite.height = t;
-
-        this.bgPaintContainer.addChild(sprite);
+          container.addChild(sprite);
+        }
       }
     }
+
+    return { mode, materialId, container, mask };
+  }
+
+  // chiamato a mousedown
+  public beginBackgroundPaintStroke(): void {
+    const mode = this.editorState.activePaintMode;
+    const materialId = this.editorState.activeMaterial;
+
+    this.currentPaintStroke = this.createPaintStrokeLayer(mode, materialId);
+  }
+
+  // dot/stroke continuo per QUALSIASI modalità (bg/fg/top)
+  public paintBackgroundDot(
+    x: number,
+    y: number,
+    radius: number,
+    _color: number = 0xffffff,
+    _alpha: number = 1.0,
+  ): void {
+    const mode = this.editorState.activePaintMode;
+    const materialId = this.editorState.activeMaterial;
+
+    let stroke = this.currentPaintStroke;
+
+    // se non c'è uno stroke corrente compatibile, ne creiamo uno nuovo
+    if (
+      !stroke ||
+      stroke.mode !== mode ||
+      stroke.materialId !== materialId
+    ) {
+      stroke = this.createPaintStrokeLayer(mode, materialId);
+      this.currentPaintStroke = stroke;
+    }
+
+    const { mask } = stroke;
+
+    mask.beginFill(0xffffff, 1);
+    mask.drawCircle(x, y, radius);
+    mask.endFill();
+  }
+
+  // mouseup → chiudiamo lo stroke corrente
+  public endBackgroundPaintStroke(): void {
+    this.currentPaintStroke = null;
   }
 
   // ---------------------------------------------------------
@@ -478,44 +552,6 @@ export class EditorRenderer {
     this.shovelGlowGraphics.beginFill(0xffffff);
     this.drawMultiPolygon(this.shovelGlowGraphics, shape);
     this.shovelGlowGraphics.endFill();
-  }
-
-  // ---------------------------------------------------------
-  // PAINT BG API (usa tiles + mask)
-  // ---------------------------------------------------------
-  renderBackgroundPaint(
-    shape: MultiPolygon | null,
-    _color: number = 0xffffff,
-    _alpha: number = 1.0,
-  ): void {
-    this.bgPaintMask.clear();
-
-    if (!shape || !shape.length) {
-      this.bgPaintContainer.visible = false;
-      return;
-    }
-
-    this.bgPaintContainer.visible = true;
-
-    this.bgPaintMask.beginFill(0xffffff, 1);
-    this.drawMultiPolygon(this.bgPaintMask, shape);
-    this.bgPaintMask.endFill();
-  }
-
-  paintBackgroundDot(
-    x: number,
-    y: number,
-    radius: number,
-    _color: number = 0xffffff,
-    _alpha: number = 1.0,
-  ): void {
-    console.log("PAINT DOT", { x, y, radius });
-
-    this.bgPaintContainer.visible = true;
-
-    this.bgPaintMask.beginFill(0xffffff, 1);
-    this.bgPaintMask.drawCircle(x, y, radius);
-    this.bgPaintMask.endFill();
   }
 
   // ---------------------------------------------------------
@@ -684,7 +720,7 @@ export class EditorRenderer {
   }
 
   // ---------------------------------------------------------
-  // RENDER COMPLETO SHOVEL (nessuna rotazione globale)
+  // RENDER COMPLETO SHOVEL
   // ---------------------------------------------------------
   public renderFullShovel(shape: MultiPolygon): void {
     if (!shape || shape.length === 0) return;

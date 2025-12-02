@@ -3,7 +3,7 @@
 import type { EditorState } from "../core/state";
 import type { EditorRenderer } from "../rendering/renderer";
 import type { ShovelTool } from "../core/tools/shovelTool";
-import { TOOL_ID, PAINT_MODE } from "../core/state";
+import { TOOL_ID } from "../core/state";
 import type { Point2D } from "../core/types";
 
 export class BrushStrokeController {
@@ -63,14 +63,14 @@ export class BrushStrokeController {
     }
 
     // --------------------------------------------------
-    // PAINT (per ora solo Background → disegniamo un dot nella mask BG)
+    // PAINT (Background / Foreground / Top)
     // --------------------------------------------------
     if (this.editorState.activeTool === TOOL_ID.Paint) {
-      if (this.editorState.activePaintMode === PAINT_MODE.Background) {
-        const radius = this.editorState.brush.size / 2;
-        this.renderer.paintBackgroundDot(worldPos.x, worldPos.y, radius);
-      }
-      // Foreground / Top li gestiremo dopo
+      const radius = this.editorState.brush.size / 2;
+
+      // nuovo stroke → nuovo layer (dipende da activePaintMode)
+      this.renderer.beginBackgroundPaintStroke();
+      this.renderer.paintBackgroundDot(worldPos.x, worldPos.y, radius);
       return;
     }
   }
@@ -92,13 +92,11 @@ export class BrushStrokeController {
     }
 
     // --------------------------------------------------
-    // PAINT (Background)
+    // PAINT (qualsiasi modalità)
     // --------------------------------------------------
     if (this.editorState.activeTool === TOOL_ID.Paint) {
-      if (this.editorState.activePaintMode === PAINT_MODE.Background) {
-        const radius = this.editorState.brush.size / 2;
-        this.renderer.paintBackgroundDot(worldPos.x, worldPos.y, radius);
-      }
+      const radius = this.editorState.brush.size / 2;
+      this.renderer.paintBackgroundDot(worldPos.x, worldPos.y, radius);
       return;
     }
   }
@@ -120,17 +118,15 @@ export class BrushStrokeController {
       // shape finale consolidata
       const finalShape = this.editorState.world.shovel.shape;
 
-      // 👉 usa il render completo che ruota i poligoni
       this.renderer.renderFullShovel(finalShape);
-
       return;
     }
 
     // --------------------------------------------------
-    // PAINT: per ora niente commit logico,
-    // la mask BG è già stata aggiornata in tempo reale
+    // PAINT: fine stroke → chiudiamo il layer corrente
     // --------------------------------------------------
     if (this.editorState.activeTool === TOOL_ID.Paint) {
+      this.renderer.endBackgroundPaintStroke();
       return;
     }
   }
