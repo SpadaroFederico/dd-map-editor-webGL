@@ -435,12 +435,45 @@ export class EditorRenderer {
   }
 
   // chiamato a mousedown
-  public beginBackgroundPaintStroke(): void {
+public beginPaintStroke(): void {
     const mode = this.editorState.activePaintMode;
     const materialId = this.editorState.activeMaterial;
 
     this.currentPaintStroke = this.createPaintStrokeLayer(mode, materialId);
+}
+
+    // ---------------------------------------------------------
+  // BRUSH SHAPES PER IL PAINT (polygon / circle / square)
+  // ---------------------------------------------------------
+  private drawBrushShape(
+    g: PIXI.Graphics,
+    x: number,
+    y: number,
+    radius: number,
+  ): void {
+    const shape = (((this.editorState.brush as any).shape ??
+      "circle") as "polygon" | "circle" | "square");
+
+    // 1) CERCHIO (default)
+    if (shape === "circle") {
+      g.drawCircle(x, y, radius);
+      return;
+    }
+
+    // 2) QUADRATO (senza rotazioni, allineato agli assi)
+    if (shape === "square") {
+      const side = radius * 2;
+      g.drawRect(x - radius, y - radius, side, side);
+      return;
+    }
+
+    // 3) POLIGONO:
+    //    NON lo disegniamo qui: i poligoni "seri"
+    //    arrivano come MultiPolygon da stamps / stampLibrary
+    //    e vengono disegnati con paintPolygonStamp().
+    //    Qui non facciamo nulla per evitare di inventare un'altra forma.
   }
+
 
   // dot/stroke continuo per QUALSIASI modalità (bg/fg/top)
   public paintBackgroundDot(
@@ -468,9 +501,38 @@ export class EditorRenderer {
     const { mask } = stroke;
 
     mask.beginFill(0xffffff, 1);
-    mask.drawCircle(x, y, radius);
+    this.drawBrushShape(mask, x, y, radius);
     mask.endFill();
   }
+
+    // ---------------------------------------------------------
+  // PAINT POLYGON usando i MultiPolygon dei tuoi stamps
+  // ---------------------------------------------------------
+  public paintPolygonStamp(shape: MultiPolygon): void {
+    if (!shape || !shape.length) return;
+
+    const mode = this.editorState.activePaintMode;
+    const materialId = this.editorState.activeMaterial;
+
+    let stroke = this.currentPaintStroke;
+
+    // se non c'è uno stroke corrente compatibile, ne creiamo uno nuovo
+    if (
+      !stroke ||
+      stroke.mode !== mode ||
+      stroke.materialId !== materialId
+    ) {
+      stroke = this.createPaintStrokeLayer(mode, materialId);
+      this.currentPaintStroke = stroke;
+    }
+
+    const { mask } = stroke;
+
+    mask.beginFill(0xffffff, 1);
+    this.drawMultiPolygon(mask, shape);
+    mask.endFill();
+  }
+
 
   // mouseup → chiudiamo lo stroke corrente
   public endBackgroundPaintStroke(): void {

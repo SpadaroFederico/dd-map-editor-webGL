@@ -187,4 +187,14 @@ export class ShovelTool {
 
     return [polygon];
   }
+
+  // ───────────────────────
+  // PUBBLIC: crea un singolo stamp per il PAINT
+  // ───────────────────────
+  public createSingleStampPolygon(
+    editor: EditorState,
+    worldPos: Point2D
+  ): MultiPolygon {
+    return this.createStampAt(editor, worldPos);
+  }
 }

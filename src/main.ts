@@ -71,6 +71,11 @@ async function main(): Promise<void> {
     canvas,
   );
 
+  brushController.setPaintPolygonFactory((es, worldPos) =>
+    shovelTool.createSingleStampPolygon(es, worldPos)
+);
+
+
   await renderer.init();
 
   // ===== DEBUG GLOBAL =====

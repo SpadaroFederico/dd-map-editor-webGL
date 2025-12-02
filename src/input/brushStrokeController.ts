@@ -4,7 +4,12 @@ import type { EditorState } from "../core/state";
 import type { EditorRenderer } from "../rendering/renderer";
 import type { ShovelTool } from "../core/tools/shovelTool";
 import { TOOL_ID } from "../core/state";
-import type { Point2D } from "../core/types";
+import type { Point2D, MultiPolygon } from "../core/types";
+
+type PolygonStampFactory = (
+  editorState: EditorState,
+  worldPos: Point2D,
+) => MultiPolygon | null;
 
 export class BrushStrokeController {
   private editorState: EditorState;
@@ -13,6 +18,9 @@ export class BrushStrokeController {
   private domElement: HTMLElement;
 
   private isDrawing = false;
+
+  // factory opzionale per generare il MultiPolygon del paint (polygon)
+  private paintPolygonFactory: PolygonStampFactory | null = null;
 
   constructor(
     editorState: EditorState,
@@ -26,6 +34,20 @@ export class BrushStrokeController {
     this.domElement = domElement;
 
     this.bindEvents();
+
+    // ESEMPIO: se hai già una funzione che ti genera il poligono
+    // puoi collegarla qui oppure dall'esterno con setPaintPolygonFactory()
+    //
+    // this.paintPolygonFactory = (es, pos) =>
+    //   this.shovelTool.createSingleStampPolygon(es, pos);
+  }
+
+  /**
+   * Permette a chi crea il controller di collegare la factory
+   * che restituisce il MultiPolygon da usare per il paint (shape = polygon)
+   */
+  public setPaintPolygonFactory(factory: PolygonStampFactory | null): void {
+    this.paintPolygonFactory = factory;
   }
 
   private bindEvents(): void {
@@ -67,11 +89,28 @@ export class BrushStrokeController {
     // --------------------------------------------------
     if (this.editorState.activeTool === TOOL_ID.Paint) {
       const radius = this.editorState.brush.size / 2;
+      const shape = (((this.editorState.brush as any).shape ??
+        "circle") as "polygon" | "circle" | "square");
 
-      // nuovo stroke → nuovo layer (dipende da activePaintMode)
-      this.renderer.beginBackgroundPaintStroke();
-      this.renderer.paintBackgroundDot(worldPos.x, worldPos.y, radius);
-      return;
+      // circle / square → usano la shape procedurale
+      if (shape === "circle" || shape === "square") {
+        // nuovo stroke → nuovo layer (dipende da activePaintMode, gestito nel renderer)
+        this.renderer.beginPaintStroke();  
+        this.renderer.paintBackgroundDot(worldPos.x, worldPos.y, radius);
+        return;
+      }
+
+      // polygon → usa i MultiPolygon dei tuoi stamps
+      if (shape === "polygon") {
+        if (this.paintPolygonFactory) {
+          const poly = this.paintPolygonFactory(this.editorState, worldPos);
+          if (poly && poly.length) {
+            this.renderer.beginPaintStroke();
+            this.renderer.paintPolygonStamp(poly);
+          }
+        }
+        return;
+      }
     }
   }
 
@@ -96,8 +135,23 @@ export class BrushStrokeController {
     // --------------------------------------------------
     if (this.editorState.activeTool === TOOL_ID.Paint) {
       const radius = this.editorState.brush.size / 2;
-      this.renderer.paintBackgroundDot(worldPos.x, worldPos.y, radius);
-      return;
+      const shape = (((this.editorState.brush as any).shape ??
+        "circle") as "polygon" | "circle" | "square");
+
+      if (shape === "circle" || shape === "square") {
+        this.renderer.paintBackgroundDot(worldPos.x, worldPos.y, radius);
+        return;
+      }
+
+      if (shape === "polygon") {
+        if (this.paintPolygonFactory) {
+          const poly = this.paintPolygonFactory(this.editorState, worldPos);
+          if (poly && poly.length) {
+            this.renderer.paintPolygonStamp(poly);
+          }
+        }
+        return;
+      }
     }
   }
 
@@ -117,7 +171,6 @@ export class BrushStrokeController {
 
       // shape finale consolidata
       const finalShape = this.editorState.world.shovel.shape;
-
       this.renderer.renderFullShovel(finalShape);
       return;
     }
