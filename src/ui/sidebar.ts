@@ -263,12 +263,16 @@ export function createSidebar(
       }
       currentRenderer.fillPaintLayer();
     },
-    onFillShape: (mode, ringWidth) => {
+    onFillShapePreview: (mode, ringWidth) => {
+      if (!currentRenderer) return;
+      currentRenderer.updatePaintSelectionPreview(mode, ringWidth);
+    },
+    onApplyShape: (mode, ringWidth) => {
       if (!currentRenderer) {
-        console.warn("FillShape: renderer non ancora inizializzato");
+        console.warn("ApplyShape: renderer non ancora inizializzato");
         return;
       }
-      currentRenderer.fillPaintShape(mode, ringWidth);
+      currentRenderer.applyPaintSelection(mode, ringWidth);
     },
   });
 

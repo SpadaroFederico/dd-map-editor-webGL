@@ -70,6 +70,9 @@ export class EditorRenderer {
   // BORDO FINALE
   private shovelBorderGraphics: PIXI.Graphics;
 
+  // PREVIEW SELEZIONE PAINT
+  private paintSelectionGraphics: PIXI.Graphics;
+
   constructor(
     editorState: EditorState,
     shovelTool: ShovelTool,
@@ -125,7 +128,11 @@ export class EditorRenderer {
     this.topPaintRoot = new PIXI.Container();
     this.worldContainer.addChild(this.topPaintRoot);
 
-    // 9) MASK SHOVEL
+    // 9) OVERLAY SELEZIONE PAINT (area bianca)
+    this.paintSelectionGraphics = new PIXI.Graphics();
+    this.worldContainer.addChild(this.paintSelectionGraphics);
+
+    // 10) MASK SHOVEL
     this.shovelMaskContainer = new PIXI.Container();
     this.shovelBaseMaskGraphics = new PIXI.Graphics();
     this.shovelStrokeMaskGraphics = new PIXI.Graphics();
@@ -243,7 +250,7 @@ export class EditorRenderer {
   // ---------------------------------------------------------
   // BACKGROUND BASE
   // ---------------------------------------------------------
-    private drawBackgroundFromPattern(): void {
+  private drawBackgroundFromPattern(): void {
     const t = this.dirtPattern.config.tileSize;
     const half = this.tilesPerSide / 2;
     const n = this.dirtTextures.length;
@@ -251,7 +258,7 @@ export class EditorRenderer {
     this.backgroundTilesContainer.removeChildren();
 
     for (let i = 0; i < this.tilesPerSide; i++) {
-        for (let j = 0; j < this.tilesPerSide; j++) {
+      for (let j = 0; j < this.tilesPerSide; j++) {
         const x = (i - half) * t;
         const y = (j - half) * t;
         const idx = this.dirtPattern.getVariantIndex(i, j);
@@ -259,14 +266,14 @@ export class EditorRenderer {
         const tex = n > 0 ? this.dirtTextures[idx % n] : null;
 
         if (tex) {
-            const s = new PIXI.Sprite(tex);
-            s.x = x;
-            s.y = y;
-            s.width = t;
-            s.height = t;
-            this.backgroundTilesContainer.addChild(s);
+          const s = new PIXI.Sprite(tex);
+          s.x = x;
+          s.y = y;
+          s.width = t;
+          s.height = t;
+          this.backgroundTilesContainer.addChild(s);
         }
-        }
+      }
     }
 
     // Croce debug
@@ -277,8 +284,7 @@ export class EditorRenderer {
     axis.moveTo(0, -1000);
     axis.lineTo(0, 1000);
     this.backgroundTilesContainer.addChild(axis);
-    }
-
+  }
 
   // ---------------------------------------------------------
   // SHOVEL FILL (ERBA) – pattern indipendente dal background
@@ -507,52 +513,80 @@ export class EditorRenderer {
     return ring;
   }
 
+  // Costruisce il MultiPolygon per il fill (inside / outline)
+  private buildFillShape(
+    fillType: "inside" | "outline",
+    ringWidth: number,
+  ): MultiPolygon | null {
+    const radius = this.editorState.brush.size;
+    if (radius <= 0) return null;
+
+    const center: Point2D = { x: 0, y: 0 };
+    const innerRing = this.makeBrushShapeRing(center, radius);
+    if (innerRing.length < 3) return null;
+
+    if (fillType === "inside" || ringWidth <= 0) {
+      return [
+        {
+          outer: innerRing,
+          holes: [],
+        },
+      ];
+    }
+
+    const scale = (radius + ringWidth) / radius;
+    const outerRing: Point2D[] = innerRing.map((p) => ({
+      x: center.x + (p.x - center.x) * scale,
+      y: center.y + (p.y - center.y) * scale,
+    }));
+
+    return [
+      {
+        outer: outerRing,
+        holes: [innerRing],
+      },
+    ];
+  }
+
   // ---------------------------------------------------------
-  // FILL SHAPE: interno o anello esterno (outline)
+  // PREVIEW SELEZIONE PAINT (area bianca)
   // ---------------------------------------------------------
-  public fillPaintShape(fillType: "inside" | "outline", ringWidth: number): void {
+  public updatePaintSelectionPreview(
+    fillType: "inside" | "outline",
+    ringWidth: number,
+  ): void {
+    const poly = this.buildFillShape(fillType, ringWidth);
+    const g = this.paintSelectionGraphics;
+    g.clear();
+
+    if (!poly) return;
+
+    g.lineStyle(2, 0xffffff, 0.9);
+    g.beginFill(0xffffff, 0.25);
+    drawMultiPolygon(g, poly);
+    g.endFill();
+  }
+
+  // Applica il fill sulla selezione corrente
+  public applyPaintSelection(
+    fillType: "inside" | "outline",
+    ringWidth: number,
+  ): void {
+    const poly = this.buildFillShape(fillType, ringWidth);
+    if (!poly) return;
+
     const mode = this.editorState.activePaintMode;
     const materialId = this.editorState.activeMaterial;
 
     const stroke = this.createPaintStrokeLayer(mode, materialId);
     const { mask } = stroke;
 
-    const radius = this.editorState.brush.size;
-    if (radius <= 0) return;
-
-    const center: Point2D = { x: 0, y: 0 }; // per ora al centro mappa
-    const innerRing = this.makeBrushShapeRing(center, radius);
-    if (innerRing.length < 3) return;
-
-    mask.clear();
     mask.beginFill(0xffffff, 1);
-
-    if (fillType === "inside" || ringWidth <= 0) {
-      const poly: MultiPolygon = [
-        {
-          outer: innerRing,
-          holes: [],
-        },
-      ];
-      drawMultiPolygon(mask, poly);
-    } else {
-      // anello esterno: shape scalata verso l'esterno
-      const scale = (radius + ringWidth) / radius;
-      const outerRing: Point2D[] = innerRing.map((p) => ({
-        x: center.x + (p.x - center.x) * scale,
-        y: center.y + (p.y - center.y) * scale,
-      }));
-
-      const poly: MultiPolygon = [
-        {
-          outer: outerRing,
-          holes: [innerRing],
-        },
-      ];
-      drawMultiPolygon(mask, poly);
-    }
-
+    drawMultiPolygon(mask, poly);
     mask.endFill();
+
+    // puliamo la preview
+    this.paintSelectionGraphics.clear();
   }
 
   // ---------------------------------------------------------

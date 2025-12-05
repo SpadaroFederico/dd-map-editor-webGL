@@ -23,7 +23,8 @@ interface PaintPanelDeps {
   drawPreview: () => void;
 
   onFillLayer: () => void;
-  onFillShape: (mode: "inside" | "outline", ringWidth: number) => void;
+  onFillShapePreview: (mode: "inside" | "outline", ringWidth: number) => void;
+  onApplyShape: (mode: "inside" | "outline", ringWidth: number) => void;
 }
 
 export interface PaintPanelHandles {
@@ -45,8 +46,13 @@ export function createPaintPanel(
     openSection,
     drawPreview,
     onFillLayer,
-    onFillShape,
+    onFillShapePreview,
+    onApplyShape,
   } = deps;
+
+  // stato condiviso per il fill shape
+  let currentFillMode: "inside" | "outline" = "inside";
+  let currentRingWidth = 40;
 
   // -------------------------------------------------
   // SECTION – PAINT TOOL
@@ -92,6 +98,7 @@ export function createPaintPanel(
     paintSizeValue.value = String(clamped);
     editorState.brush.size = clamped;
     drawPreview();
+    onFillShapePreview(currentFillMode, currentRingWidth);
   };
 
   paintSizeRange.oninput = () => applyPaintSize(Number(paintSizeRange.value));
@@ -178,13 +185,13 @@ export function createPaintPanel(
   paintBodyInner.appendChild(modeGroup);
 
   // ==========================
-  // Shape Fill (inside / outline)
+  // Shape Fill (inside / outline + spessore + apply)
   // ==========================
   const shapeFillGroup = createGroup("Shape Fill");
+
+  // Row 1: Inside / Outline
   const shapeFillRow1 = document.createElement("div");
   shapeFillRow1.className = "tf-button-group";
-
-  let currentFillMode: "inside" | "outline" = "inside";
 
   const insideBtn = document.createElement("button");
   insideBtn.type = "button";
@@ -206,21 +213,11 @@ export function createPaintPanel(
     }
   };
 
-  insideBtn.onclick = () => {
-    currentFillMode = "inside";
-    updateFillModeButtons();
-  };
-
-  outlineBtn.onclick = () => {
-    currentFillMode = "outline";
-    updateFillModeButtons();
-  };
-
   shapeFillRow1.appendChild(insideBtn);
   shapeFillRow1.appendChild(outlineBtn);
   shapeFillGroup.appendChild(shapeFillRow1);
 
-  // slider spessore anello
+  // Row 2: slider spessore anello
   const shapeFillRow2 = document.createElement("div");
   shapeFillRow2.className = "tf-slider-row";
 
@@ -228,13 +225,13 @@ export function createPaintPanel(
   ringWidthRange.type = "range";
   ringWidthRange.min = "0";
   ringWidthRange.max = "400";
-  ringWidthRange.value = "40";
+  ringWidthRange.value = String(currentRingWidth);
 
   const ringWidthValue = document.createElement("input");
   ringWidthValue.type = "number";
   ringWidthValue.min = "0";
   ringWidthValue.max = "400";
-  ringWidthValue.value = "40";
+  ringWidthValue.value = String(currentRingWidth);
   ringWidthValue.className = "tf-number-input";
 
   const applyRingWidth = (val: number) => {
@@ -243,6 +240,8 @@ export function createPaintPanel(
     const clamped = Math.max(min, Math.min(max, val));
     ringWidthRange.value = String(clamped);
     ringWidthValue.value = String(clamped);
+    currentRingWidth = clamped;
+    onFillShapePreview(currentFillMode, currentRingWidth);
   };
 
   ringWidthRange.oninput = () =>
@@ -254,7 +253,20 @@ export function createPaintPanel(
   shapeFillRow2.appendChild(ringWidthValue);
   shapeFillGroup.appendChild(shapeFillRow2);
 
-  // bottone Apply shape
+  // event handler dei bottoni inside/outline (dopo aver creato lo slider)
+  insideBtn.onclick = () => {
+    currentFillMode = "inside";
+    updateFillModeButtons();
+    onFillShapePreview(currentFillMode, currentRingWidth);
+  };
+
+  outlineBtn.onclick = () => {
+    currentFillMode = "outline";
+    updateFillModeButtons();
+    onFillShapePreview(currentFillMode, currentRingWidth);
+  };
+
+  // Row 3: bottone Apply shape
   const shapeFillRow3 = document.createElement("div");
   shapeFillRow3.className = "tf-mode-row";
 
@@ -264,8 +276,7 @@ export function createPaintPanel(
   applyShapeBtn.textContent = "Apply Shape";
 
   applyShapeBtn.onclick = () => {
-    const ringWidth = Number(ringWidthRange.value) || 0;
-    onFillShape(currentFillMode, ringWidth);
+    onApplyShape(currentFillMode, currentRingWidth);
   };
 
   shapeFillRow3.appendChild(applyShapeBtn);
@@ -310,6 +321,9 @@ export function createPaintPanel(
     editorState.activeTool = "paint" as any;
     openSection(paintSection.header, paintBodyInner);
   };
+
+  // preview iniziale della selezione
+  onFillShapePreview(currentFillMode, currentRingWidth);
 
   return {
     header: paintSection.header,
