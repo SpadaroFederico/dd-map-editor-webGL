@@ -303,3 +303,137 @@
   max-height: 200px !important;
   box-sizing: content-box !important;
 }
+
+
+.tf-mode-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tf-mode-row .tf-number-input {
+  flex: 1;
+}
+
+.tf-mode-row .tf-btn-toggle {
+  padding: 4px 10px;
+  white-space: nowrap;
+}
+
+/* ====== TEXTURE / CURRENT MATERIAL CARD ====== */
+
+.tf-group-label {
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #d4a831;
+  margin-bottom: 4px;
+}
+
+/* card che contiene l’anteprima della texture corrente */
+.tf-material-current {
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+  padding: 2px;
+  margin-top: 4px;
+
+  border-radius: 4px;
+  border: 1px solid #3b2d1d;
+  background-color: #18110b;
+
+  cursor: pointer;
+  text-align: left;
+
+  outline: none;
+}
+
+/* rimuove lo stile “bottone HTML” */
+.tf-material-current,
+.tf-material-current:hover,
+.tf-material-current:active {
+  border-style: solid;
+}
+
+/* anteprima grande della texture (come in Dungeondraft) */
+.tf-material-current-thumb {
+  flex: 1 1 auto;
+  height: 72px;          /* aumenta/diminuisci se la vuoi più alta/bassa */
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  border-radius: 3px;
+}
+
+/* colonna di testo a destra */
+.tf-material-current-info {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 0 8px;
+  min-width: 0;
+}
+
+/* nome della texture */
+.tf-material-current-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: #f8f5f0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* “Click to change” piccolo e desaturato */
+.tf-material-current-hint {
+  font-size: 10px;
+  color: #b3a48c;
+  margin-top: 2px;
+}
+
+/* stato hover/focus: leggero highlight del bordo */
+.tf-material-current:hover {
+  border-color: #d4a831;
+}
+
+.tf-material-current:focus-visible {
+  outline: 1px solid #d4a831;
+  box-shadow: 0 0 0 1px #d4a831;
+}
+
+.tf-material-current-thumb {
+  flex: 1 1 auto;
+  height: 72px;                 /* altezza della preview */
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  border-radius: 3px;
+  position: relative;           /* necessario per l’overlay assoluto */
+  overflow: hidden;
+}
+
+/* overlay centrale "Show catalog" */
+.tf-material-current-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #f8f5f0;
+
+  background: rgba(0, 0, 0, 0.45);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  pointer-events: none;         /* il click passa comunque alla card */
+}
+
+/* quando passi sopra la card, mostra l’overlay */
+.tf-material-current:hover .tf-material-current-overlay {
+  opacity: 1;
+}
+

@@ -2,7 +2,7 @@
 
 // (lascia invariato ciò che già hai sopra)
 
-export type MaterialId = 'grass' | 'dirt' | 'water' | string;
+export type MaterialId = 'grass' | 'dirt' | 'water' | 'reddungeon' | string;
 
 export interface Point2D {
   x: number;
